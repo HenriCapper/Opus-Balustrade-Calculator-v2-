@@ -1,0 +1,12 @@
+/* subtle page background pattern */
+.bg-grid {
+	background-image: radial-gradient(rgba(2, 6, 23, 0.06) 1px, transparent 1px);
+	background-size: 16px 16px;
+}
+
+/* remove default button outline but keep accessibility */
+button:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.35);
+	border-radius: 0.75rem;
+}
