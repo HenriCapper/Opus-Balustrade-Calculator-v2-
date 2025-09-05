@@ -1,24 +1,24 @@
-import { useState } from 'react'
-import inlineImg from '@/assets/shape/inline.webp'
-import lImg from '@/assets/shape/lshaped.webp'
-import uImg from '@/assets/shape/ushape.webp'
-import enclosedImg from '@/assets/shape/enclosed.webp'
-import customImg from '@/assets/shape/custom.webp'
-import TileCard from '@/components/ui/TileCard'
-import Button from '@/components/ui/Button'
-
-type ShapeKey = 'inline' | 'corner' | 'u' | 'enclosed' | 'custom'
+// no local state; selection managed by Zustand
+import inlineImg from "@/assets/shape/inline.webp";
+import lImg from "@/assets/shape/lshaped.webp";
+import uImg from "@/assets/shape/ushape.webp";
+import enclosedImg from "@/assets/shape/enclosed.webp";
+import customImg from "@/assets/shape/custom.webp";
+import TileCard from "@/components/ui/TileCard";
+import Button from "@/components/ui/Button";
+import { useShapeStore, type ShapeKey } from "@/store/useShapeStore";
 
 const shapes: { key: ShapeKey; label: string; img: string }[] = [
-  { key: 'inline', label: 'Inline', img: inlineImg },
-  { key: 'corner', label: 'Corner (L)', img: lImg },
-  { key: 'u', label: 'U Shape', img: uImg },
-  { key: 'enclosed', label: 'Enclosed', img: enclosedImg },
-  { key: 'custom', label: 'Custom', img: customImg },
-]
+  { key: "inline", label: "Inline", img: inlineImg },
+  { key: "corner", label: "Corner (L)", img: lImg },
+  { key: "u", label: "U Shape", img: uImg },
+  { key: "enclosed", label: "Enclosed", img: enclosedImg },
+  { key: "custom", label: "Custom", img: customImg },
+];
 
 export default function ShapeSelector() {
-  const [selected, setSelected] = useState<ShapeKey>('custom')
+  const selected = useShapeStore((s) => s.selected);
+  const setSelected = useShapeStore((s) => s.setSelected);
 
   return (
     <section>
@@ -44,17 +44,17 @@ export default function ShapeSelector() {
             img={customImg}
             label="Custom"
             big
-            selected={selected === 'custom'}
-            onClick={() => setSelected('custom')}
+            selected={selected === "custom"}
+            onClick={() => setSelected("custom")}
           />
         </div>
       </div>
 
       <div className="mt-6 flex justify-center">
-        <Button className="w-full max-w-md" disabled>
+        <Button className="w-full max-w-md " disabled={!selected}>
           NEXT
         </Button>
       </div>
     </section>
-  )
+  );
 }
