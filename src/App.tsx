@@ -1,6 +1,6 @@
 import './App.css'
-import Header from './components/Header.tsx'
-import ShapeSelector from './components/ShapeSelector.tsx'
+import Header from '@/components/Header.tsx'
+import ShapeSelector from '@/components/ShapeSelector.tsx'
 
 function App() {
   return (

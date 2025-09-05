@@ -1,9 +1,9 @@
-import logo from '../assets/SP12.webp'
+import logo from '@/assets/SP12.webp'
 
 export default function Header() {
   return (
     <header className="rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-lg">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex m-auto items-center justify-center gap-4">
         <div className="flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm">
             <img src={logo} alt="Opus SP12" className="h-12 w-12 object-contain" />
@@ -19,11 +19,10 @@ export default function Header() {
             </p>
           </div>
         </div>
-
         <div className="hidden sm:block">
           <span
             title="status"
-            className="inline-block h-5 w-10 rounded-full bg-rose-400/90 shadow-inner"
+            className="inline-block h-5 w-10 rounded-full bg-rose-400/90 shadow-inner text-white"
           />
         </div>
       </div>

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import inlineImg from '../assets/shape/inline.webp'
-import lImg from '../assets/shape/lshaped.webp'
-import uImg from '../assets/shape/ushape.webp'
-import enclosedImg from '../assets/shape/enclosed.webp'
-import customImg from '../assets/shape/custom.webp'
-import TileCard from './ui/TileCard'
-import Button from './ui/Button'
+import inlineImg from '@/assets/shape/inline.webp'
+import lImg from '@/assets/shape/lshaped.webp'
+import uImg from '@/assets/shape/ushape.webp'
+import enclosedImg from '@/assets/shape/enclosed.webp'
+import customImg from '@/assets/shape/custom.webp'
+import TileCard from '@/components/ui/TileCard'
+import Button from '@/components/ui/Button'
 
 type ShapeKey = 'inline' | 'corner' | 'u' | 'enclosed' | 'custom'
 
