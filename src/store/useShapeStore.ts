@@ -5,9 +5,11 @@ export type ShapeKey = "inline" | "corner" | "u" | "enclosed" | "custom";
 type ShapeState = {
   selected: ShapeKey | null;
   setSelected: (key: ShapeKey) => void;
+  clearSelected: () => void;
 };
 
 export const useShapeStore = create<ShapeState>((set) => ({
   selected: null,
   setSelected: (key) => set({ selected: key }),
+  clearSelected: () => set({ selected: null }),
 }));
