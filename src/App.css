@@ -1,7 +1,24 @@
 /* subtle page background pattern */
 .bg-grid {
-	background-image: radial-gradient(rgba(2, 6, 23, 0.06) 1px, transparent 1px);
+	background-image: radial-gradient(rgba(169, 170, 179, 0.397) 1px, transparent 1px);
 	background-size: 16px 16px;
+}
+
+/* infinite slow moving grid for hero */
+.animated-grid::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background-image: linear-gradient(rgba(255, 255, 255, 0.397) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.397) 1px, transparent 1px);
+	background-size: 60px 60px, 60px 60px;
+	mask: radial-gradient(circle at center, rgba(255,255,255,0.397), transparent 100%);
+	animation: gridMove 10s linear infinite;
+	pointer-events: none;
+}
+
+@keyframes gridMove {
+	0% { background-position: 0 0, 0 0; }
+	100% { background-position: 60px 60px, 60px 60px; }
 }
 
 /* remove default button outline but keep accessibility */
