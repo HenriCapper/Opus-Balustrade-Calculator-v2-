@@ -1,0 +1,106 @@
+import channelImg from '@/assets/systems/Channel.webp'
+import spigotsImg from '@/assets/systems/Spigots.webp'
+import standoffsImg from '@/assets/systems/Standoffs.webp'
+import postsImg from '@/assets/systems/Post.webp'
+import { useSelectionStore } from '@/store/useSelectionStore'
+
+type SystemDef = {
+  key: 'channel' | 'spigots' | 'standoffs' | 'posts'
+  label: string
+  desc: string
+  img: string
+  disabled?: boolean
+}
+
+const systems: SystemDef[] = [
+  {
+    key: 'channel',
+    label: 'Channel Systems',
+    desc: 'Structural glazing with aluminum channels',
+    img: channelImg,
+  },
+  {
+    key: 'spigots',
+    label: 'Spigots & MiniPosts',
+    desc: 'Post-mounted glass panels with spigots and mini posts',
+    img: spigotsImg,
+  },
+  {
+    key: 'standoffs',
+    label: 'Point Fix Systems',
+    desc: 'Point-fixed glazing with disc and plate connectors',
+    img: standoffsImg,
+  },
+  {
+    key: 'posts',
+    label: 'Post Systems',
+    desc: 'Coming Soon - Resolute and Vortex post systems',
+    img: postsImg,
+    disabled: true,
+  },
+]
+
+export default function SystemSelector() {
+  const system = useSelectionStore((s) => s.system)
+  const setSystem = useSelectionStore((s) => s.setSystem)
+
+  return (
+    <section>
+      <div className="mb-8 flex items-center gap-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-600 text-sm font-semibold text-white shadow-inner">
+          1
+        </div>
+        <h2 className="text-2xl font-semibold text-slate-700">
+          Choose Your System Type
+        </h2>
+      </div>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        {systems.map((s) => {
+          const selected = s.key === system
+          return (
+            <button
+              key={s.key}
+              type="button"
+              disabled={s.disabled}
+              onClick={() => !s.disabled && setSystem(s.key)}
+              className={[
+                'group relative flex flex-col items-center rounded-xl border bg-white p-6 text-center shadow-sm transition-all duration-200 ease-out',
+                'hover:shadow-md hover:border-sky-300',
+                selected
+                  ? 'border-sky-500 shadow-md ring-1 ring-sky-400/40'
+                  : 'border-slate-200',
+                s.disabled
+                  ? 'cursor-not-allowed opacity-60 hover:shadow-sm hover:border-slate-200'
+                  : 'cursor-pointer',
+              ].join(' ')}
+            >
+              <div
+                className={[
+                  'mb-4 flex h-40 w-full items-center justify-center rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200',
+                  selected ? 'ring-sky-300 bg-sky-50' : '',
+                ].join(' ')}
+              >
+                <img
+                  src={s.img}
+                  alt={s.label}
+                  className="h-28 w-28 object-contain drop-shadow-sm"
+                />
+              </div>
+              <h3
+                className={[
+                  'mb-2 text-base font-semibold text-slate-700 transition-colors',
+                  selected ? 'text-sky-600' : 'group-hover:text-slate-800',
+                ].join(' ')}
+              >
+                {s.label}
+              </h3>
+              <p className="text-xs leading-relaxed text-slate-500 group-hover:text-slate-600">
+                {s.desc}
+              </p>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}

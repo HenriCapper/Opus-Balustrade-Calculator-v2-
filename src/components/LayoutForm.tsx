@@ -1,4 +1,4 @@
-import { useShapeStore } from "@/store/useShapeStore";
+import { useSelectionStore } from "@/store/useSelectionStore";
 import Button from "@/components/ui/Button";
 
 function FieldGroup({ children }: { children: React.ReactNode }) {
@@ -6,7 +6,7 @@ function FieldGroup({ children }: { children: React.ReactNode }) {
 }
 
 export default function LayoutForm() {
-  const clear = useShapeStore((s) => s.clearSelected);
+  const clear = useSelectionStore((s) => s.clearSelected);
 
   return (
     <div>

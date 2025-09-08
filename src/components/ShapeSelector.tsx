@@ -1,12 +1,12 @@
 // no local state; selection managed by Zustand
-import inlineImg from "@/assets/shape/inline.webp";
-import lImg from "@/assets/shape/lshaped.webp";
-import uImg from "@/assets/shape/ushape.webp";
-import enclosedImg from "@/assets/shape/enclosed.webp";
-import customImg from "@/assets/shape/custom.webp";
+import inlineImg from "@/assets/shapes/inline.webp";
+import lImg from "@/assets/shapes/lshaped.webp";
+import uImg from "@/assets/shapes/ushape.webp";
+import enclosedImg from "@/assets/shapes/enclosed.webp";
+import customImg from "@/assets/shapes/custom.webp";
 import TileCard from "@/components/ui/TileCard";
 import Button from "@/components/ui/Button";
-import { useShapeStore, type ShapeKey } from "@/store/useShapeStore";
+import { useSelectionStore, type ShapeKey } from "@/store/useSelectionStore";
 import { useState } from "react";
 
 const shapes: { key: ShapeKey; label: string; img: string }[] = [
@@ -17,14 +17,25 @@ const shapes: { key: ShapeKey; label: string; img: string }[] = [
 ];
 
 export default function ShapeSelector() {
-  const setSelected = useShapeStore((s) => s.setSelected);
+  const setSelected = useSelectionStore((s) => s.setSelected);
+  const clearSystem = useSelectionStore((s) => s.clearSystem);
   const [picked, setPicked] = useState<ShapeKey | null>(null);
 
   return (
     <section>
-      <h2 className="mb-6 text-center text-2xl font-semibold text-slate-700">
-        Select Fence Shape
-      </h2>
+      <div className="mb-6 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={clearSystem}
+          className="text-sm font-medium text-sky-600 hover:text-sky-700 hover:underline focus:outline-none focus-visible:ring focus-visible:ring-sky-300 rounded-md px-1"
+        >
+          ← Back
+        </button>
+        <h2 className="text-2xl font-semibold text-slate-700 text-center flex-1">
+          Select Fence Shape
+        </h2>
+        <span className="w-[52px]" />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {shapes.slice(0, 4).map((s) => (
