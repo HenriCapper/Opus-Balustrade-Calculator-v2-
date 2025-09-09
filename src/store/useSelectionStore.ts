@@ -10,15 +10,10 @@ type ShapeState = {
   system: SystemKey | null;
   setSystem: (key: SystemKey) => void;
   clearSystem: () => void;
-  channelCalc: string | null;
-  setChannelCalc: (key: string) => void;
-  clearChannelCalc: () => void;
-  spigotCalc: string | null;
-  setSpigotCalc: (key: string) => void;
-  clearSpigotCalc: () => void;
-  pointCalc: string | null;
-  setPointCalc: (key: string) => void;
-  clearPointCalc: () => void;
+  // Selected calculator per system (e.g., channel/spigots/standoffs)
+  selectedCalc: Partial<Record<SystemKey, string>>;
+  setSelectedCalc: (system: SystemKey, key: string) => void;
+  clearSelectedCalc: (system?: SystemKey) => void;
 };
 
 export const useSelectionStore = create<ShapeState>((set) => ({
@@ -30,19 +25,18 @@ export const useSelectionStore = create<ShapeState>((set) => ({
     set({
       system: key,
       // Reset dependent selections whenever system changes
-      channelCalc: null,
-      spigotCalc: null,
-      pointCalc: null,
+      selectedCalc: {},
       selected: null,
     }),
   clearSystem: () => set({ system: null }),
-  channelCalc: null,
-  setChannelCalc: (key) => set({ channelCalc: key }),
-  clearChannelCalc: () => set({ channelCalc: null }),
-  spigotCalc: null,
-  setSpigotCalc: (key) => set({ spigotCalc: key }),
-  clearSpigotCalc: () => set({ spigotCalc: null }),
-  pointCalc: null,
-  setPointCalc: (key) => set({ pointCalc: key }),
-  clearPointCalc: () => set({ pointCalc: null }),
+  selectedCalc: {},
+  setSelectedCalc: (system, key) =>
+    set((state) => ({ selectedCalc: { ...state.selectedCalc, [system]: key } })),
+  clearSelectedCalc: (system) =>
+    set((state) => {
+      if (!system) return { selectedCalc: {} };
+      const next = { ...state.selectedCalc };
+      delete next[system];
+      return { selectedCalc: next };
+    }),
 }));

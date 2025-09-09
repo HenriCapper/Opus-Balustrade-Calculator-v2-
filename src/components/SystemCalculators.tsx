@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useSelectionStore, type SystemKey } from '@/store/useSelectionStore'
 
 // Channel assets
@@ -22,14 +23,14 @@ import sd75 from '@/assets/points/SD75.jpg'
 import sd100 from '@/assets/points/SD100.jpg'
 import pf150 from '@/assets/points/PF150R.webp'
 
-type CalcItem = {
+export type CalcItem = {
   key: string
   label: string
   desc: string
   img: string
 }
 
-const calculators: Record<SystemKey, CalcItem[]> = {
+export const calculators: Record<SystemKey, CalcItem[]> = {
   channel: [
     { key: 'smart-top', label: 'Smart Lock Top Fix', desc: 'Top-mounted channel system with smart locking mechanism', img: smartTop },
     { key: 'smart-side', label: 'Smart Lock Side Fix', desc: 'Side-mounted channel system with smart locking mechanism', img: smartSide },
@@ -56,21 +57,17 @@ const calculators: Record<SystemKey, CalcItem[]> = {
 
 export default function SystemCalculators() {
   const system = useSelectionStore((s) => s.system)
-  const channelCalc = useSelectionStore((s) => s.channelCalc)
-  const spigotCalc = useSelectionStore((s) => s.spigotCalc)
-  const pointCalc = useSelectionStore((s) => s.pointCalc)
-  const setChannelCalc = useSelectionStore((s) => s.setChannelCalc)
-  const setSpigotCalc = useSelectionStore((s) => s.setSpigotCalc)
-  const setPointCalc = useSelectionStore((s) => s.setPointCalc)
+  const selectedCalc = useSelectionStore((s) => s.selectedCalc)
+  const setSelectedCalc = useSelectionStore((s) => s.setSelectedCalc)
 
   // Decide which active calc key + setter to use
   const { activeKey, setActive } = useMemo(() => {
-    if (!system) return { activeKey: null, setActive: (_k: string) => {} }
-    if (system === 'channel') return { activeKey: channelCalc, setActive: setChannelCalc }
-    if (system === 'spigots') return { activeKey: spigotCalc, setActive: setSpigotCalc }
-    if (system === 'standoffs') return { activeKey: pointCalc, setActive: setPointCalc }
-    return { activeKey: null, setActive: (_k: string) => {} }
-  }, [system, channelCalc, spigotCalc, pointCalc, setChannelCalc, setSpigotCalc, setPointCalc])
+    if (!system) return { activeKey: null, setActive: (k: string) => { void k } }
+    return {
+      activeKey: selectedCalc[system] ?? null,
+      setActive: (key: string) => setSelectedCalc(system, key),
+    }
+  }, [system, selectedCalc, setSelectedCalc])
 
   if (!system || system === 'posts') return null
 
@@ -85,35 +82,55 @@ export default function SystemCalculators() {
         </div>
         <h2 className="text-2xl font-semibold text-slate-700">Choose Your Calculator</h2>
       </div>
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {list.map((c) => {
-          const selected = c.key === activeKey
-          return (
-            <div
-              key={c.key}
-              className={[
-                'group relative flex flex-col rounded-xl border bg-white p-6 shadow-sm transition-all duration-200',
-                selected
-                  ? 'border-sky-500 shadow-md ring-1 ring-sky-400/40'
-                  : 'border-slate-200 hover:border-sky-300 hover:shadow-md',
-              ].join(' ')}
-            >
-              <div className="mb-6 flex h-40 w-full items-center justify-center">
-                <img src={c.img} alt={c.label} className="h-32 w-auto object-contain" />
-              </div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700 group-hover:text-slate-800">{c.label}</h3>
-              <p className="mb-4 line-clamp-3 text-xs leading-relaxed text-slate-500 group-hover:text-slate-600">{c.desc}</p>
-              <button
-                type="button"
-                onClick={() => setActive(c.key)}
-                className="text-xs font-semibold text-sky-700 hover:underline"
+      <motion.div
+        key={system}
+        initial="hidden"
+        animate="show"
+        exit="hidden"
+        variants={{
+          hidden: { opacity: 0 },
+          show: {
+            opacity: 1,
+            transition: { staggerChildren: 0.07, delayChildren: 0.05 },
+          },
+        }}
+        className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+     >
+        <AnimatePresence mode="popLayout">
+          {list.map((c) => {
+            const selected = c.key === activeKey
+            return (
+              <motion.div
+                layout
+                key={`${system}-${c.key}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.6 }}
+                className={[
+                  'group relative flex flex-col rounded-xl border bg-white p-6 shadow-sm transition-all duration-200',
+                  selected
+                    ? 'border-sky-500 shadow-md ring-1 ring-sky-400/40'
+                    : 'border-slate-200 hover:border-sky-300 hover:shadow-md',
+                ].join(' ')}
               >
-                Open Calculator →
-              </button>
-            </div>
-          )
-        })}
-      </div>
+                <div className="mb-6 flex h-40 w-full items-center justify-center">
+                  <img src={c.img} alt={c.label} className="h-32 w-auto object-contain" />
+                </div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700 group-hover:text-slate-800">{c.label}</h3>
+                <p className="mb-4 line-clamp-3 text-xs leading-relaxed text-slate-500 group-hover:text-slate-600">{c.desc}</p>
+                <button
+                  type="button"
+                  onClick={() => setActive(c.key)}
+                  className="text-xs font-semibold text-sky-700 hover:underline"
+                >
+                  Open Calculator →
+                </button>
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </motion.div>
     </section>
   )
 }

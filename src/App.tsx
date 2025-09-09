@@ -6,10 +6,13 @@ import Container from "@/components/ui/Container";
 import LayoutForm from "@/components/LayoutForm";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSelectionStore } from "@/store/useSelectionStore";
+import SystemCalculators from "@/components/SystemCalculators";
 
 function App() {
   const system = useSelectionStore((s) => s.system);
+  const selectedCalc = useSelectionStore((s) => s.selectedCalc);
   const shape = useSelectionStore((s) => s.selected);
+  const hasCalcSelected = Boolean(system && selectedCalc[system!]);
   return (
     <div className="min-h-dvh bg-slate-50/80">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:py-10">
@@ -17,7 +20,7 @@ function App() {
         <div className="mt-6">
           <AnimatePresence mode="wait" initial={false}>
             <Container>
-              {!system && (
+              {!hasCalcSelected && (
                 <motion.div
                   key="system"
                   initial={{ opacity: 0, y: 16 }}
@@ -28,7 +31,20 @@ function App() {
                   <SystemSelector />
                 </motion.div>
               )}
-              {system && !shape && (
+
+              {system && !hasCalcSelected && (
+                <motion.div
+                  key="calc"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                >
+                  <SystemCalculators />
+                </motion.div>
+              )}
+
+              {hasCalcSelected && !shape && (
                 <motion.div
                   key="shape"
                   initial={{ opacity: 0, y: 16 }}
@@ -39,7 +55,7 @@ function App() {
                   <ShapeSelector />
                 </motion.div>
               )}
-              {system && shape && (
+              {hasCalcSelected && shape && (
                 <motion.div
                   key="form"
                   initial={{ opacity: 0, y: 16 }}
