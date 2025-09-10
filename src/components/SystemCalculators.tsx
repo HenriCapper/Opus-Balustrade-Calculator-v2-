@@ -18,11 +18,11 @@ import smp160 from '@/assets/spigots/SMP160.webp'
 import rmp160 from '@/assets/spigots/RMP160.webp'
 
 // Point fix (standoffs)
-import sd50 from '@/assets/points/SD50-BH.webp'
-import sd75 from '@/assets/points/SD75.jpg'
-import sd100 from '@/assets/points/SD100.jpg'
-import pf150 from '@/assets/points/PF150R.webp'
-
+import sd50 from '@/assets/standoffs/SD50-BH.webp'
+import sd75 from '@/assets/standoffs/SD75.jpg'
+import sd100 from '@/assets/standoffs/SD100.jpg'
+import pf150 from '@/assets/standoffs/PF150R.webp'
+import pradis from '@/assets/standoffs/Pradis.webp'
 export type CalcItem = {
   key: string
   label: string
@@ -51,6 +51,7 @@ export const calculators: Record<SystemKey, CalcItem[]> = {
     { key: 'pf150', label: 'PF150 Plate Fix', desc: 'Point-fixed glazing system with 150mm plate connectors', img: pf150 },
     { key: 'sd75', label: 'SD75 Single Disc', desc: 'Mid-range single disc system for structural glazing', img: sd75 },
     { key: 'sd100', label: 'SD100 Single Disc', desc: 'Heavy-duty single disc system for demanding applications', img: sd100 },
+    { key: 'pradis', label: 'Pradis Clamps', desc: 'Advanced clamping system for structural glazing', img: pradis },
   ],
   posts: [],
 }
