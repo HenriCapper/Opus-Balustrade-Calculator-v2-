@@ -64,11 +64,21 @@ export default function SystemSelector() {
               disabled={s.disabled}
               onClick={() => !s.disabled && setSystem(s.key)}
               className={[
-                'group relative flex flex-col items-center rounded-xl border bg-white p-6 text-center shadow-sm transition-all duration-200 ease-out',
-                'hover:shadow-md hover:border-sky-300',
+                // layout + base
+                'group relative flex flex-col items-center overflow-hidden rounded-2xl bg-white p-6 text-center transition-all duration-200 ease-out',
+                // pseudo element base (animated gradient bar like TileCard)
+                'before:origin-left before:transition-all before:duration-300 before:ease-out',
+                // border + shadow states
                 selected
-                  ? 'border-sky-500 shadow-md ring-1 ring-sky-400/40'
-                  : 'border-slate-200',
+                  ? [
+                      'border-2 border-sky-400 shadow-lg',
+                      'before:absolute before:inset-x-0 before:top-0 before:h-[2px] before:bg-gradient-to-r before:from-sky-400 before:via-green-400 before:to-sky-400 before:content-["" ]',
+                      'before:scale-x-100 before:opacity-100',
+                    ].join(' ')
+                  : [
+                      'border border-slate-200 shadow-sm hover:border-sky-400 hover:shadow-md',
+                      'before:scale-x-0 before:opacity-0',
+                    ].join(' '),
                 s.disabled
                   ? 'cursor-not-allowed opacity-60 hover:shadow-sm hover:border-slate-200'
                   : 'cursor-pointer',
