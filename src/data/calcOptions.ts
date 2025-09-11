@@ -13,7 +13,12 @@ export type CalcKey =
   | 'sd50'
   | 'pf150'
   | 'sd75'
-  | 'sd100';
+  | 'sd100'
+  | 'pradis'
+  | 'smartlock_top'
+  | 'smartlock_side'
+  | 'lugano'
+  | 'vista';
 
 export interface DynamicSets {
   fenceTypes: { value: string; label: string }[];
@@ -26,6 +31,7 @@ export interface DynamicSets {
 }
 
 export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
+// Spigots / mini-post systems
   sp10: {
     fenceTypes: [
       { value: 'balustrade', label: 'Balustrade (1000–1200)' },
@@ -135,7 +141,7 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
     finishes: ['SSS', 'Black'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
-  // Point-fix / standoff systems (simplified—can be refined with real PS1 constraints later)
+  // Point-fix / standoff systems 
   sd50: {
     fenceTypes: [
       { value: 'balustrade', label: 'Balustrade (1000–1200)' },
@@ -202,6 +208,93 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
     finishes: ['SSS', 'Black'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
+  pradis: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade' },
+      { value: 'pool', label: 'Pool Fence' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [1000, 1050, 1100, 1150, 1200, 1250],
+    glassThicknesses: ['12', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'none', label: 'No Handrail' },
+      { value: 'S25', label: 'S25' },
+      { value: 'AH40', label: 'AH40' },
+      { value: 'S40', label: 'S40' },
+      { value: 'R40', label: 'R40' },
+    ],
+    finishes: ['SA', 'Black', 'Powdercoat'],
+    fixingTypes: [
+      'Concrete',
+      'Steel',
+      'Timber Lag/Coach Screw',
+      'Timber Through Bolt',
+    ],
+  },
+// Channel systems
+  smartlock_top: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade' },
+      { value: 'pool', label: 'Pool Fence' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [900, 950, 1000, 1050, 1100, 1150, 1200, 1250],
+    glassThicknesses: ['12', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'none', label: 'No Handrail' },
+      { value: 'S25', label: 'S25' },
+      { value: 'MP25', label: 'MP25' },
+    ],
+    finishes: ['mill', 'Black', 'Powdercoat'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
+  smartlock_side: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade' },
+      { value: 'pool', label: 'Pool Fence' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [900, 950, 1000, 1050, 1100, 1150, 1200, 1250],
+    glassThicknesses: ['12', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'none', label: 'No Handrail' },
+      { value: 'S25', label: 'S25' },
+      { value: 'MP25', label: 'MP25' },
+    ],
+    finishes: ['mill', 'Black', 'Powdercoat'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
+  lugano: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade' },
+      { value: 'pool', label: 'Pool Fence' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [1000, 1050, 1100, 1150, 1200],
+    glassThicknesses: ['12', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'none', label: 'No Handrail' },
+      { value: 'S25', label: 'S25' },
+    ],
+    finishes: ['mill', 'Black', 'Powdercoat'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
+  vista: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade' },
+      { value: 'pool', label: 'Pool Fence' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [1000, 1050, 1100, 1150, 1200, 1250],
+    glassThicknesses: ['12', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'none', label: 'No Handrail' },
+      { value: 'S25', label: 'S25' },
+      { value: 'MP25', label: 'MP25' },
+    ],
+    finishes: ['mill', 'Black', 'Powdercoat'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
 };
 
 export function detectCalcKey(raw: string | undefined, system: string | null): CalcKey | null {
@@ -223,6 +316,14 @@ export function detectCalcKey(raw: string | undefined, system: string | null): C
     if (lower.includes('pf150')) return 'pf150';
     if (lower.includes('sd75')) return 'sd75';
     if (lower.includes('sd100')) return 'sd100';
+    if (lower.includes('pradis')) return 'pradis';
+  }
+  // Channel systems
+  if (system === 'channel') {
+    if (lower.includes('smart-side') && lower.includes('side')) return 'smartlock_side';
+    if (lower.includes('smart-top')) return 'smartlock_top';
+    if (lower.includes('lugano')) return 'lugano';
+    if (lower.includes('vista')) return 'vista';
   }
   return null;
 }
