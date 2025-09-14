@@ -8,6 +8,7 @@ import TileCard from "@/components/ui/TileCard";
 import Button from "@/components/ui/Button";
 import { useSelectionStore, type ShapeKey } from "@/store/useSelectionStore";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const shapes: { key: ShapeKey; label: string; img: string }[] = [
   { key: "inline", label: "Inline", img: inlineImg },
@@ -19,10 +20,13 @@ const shapes: { key: ShapeKey; label: string; img: string }[] = [
 export default function ShapeSelector() {
   const setSelected = useSelectionStore((s) => s.setSelected);
   const clearSystem = useSelectionStore((s) => s.clearSystem);
+  const system = useSelectionStore((s) => s.system);
+  const selectedCalc = useSelectionStore((s) => s.selectedCalc);
   const [picked, setPicked] = useState<ShapeKey | null>(null);
+  const navigate = useNavigate();
 
   return (
-    <section>
+    <section id="shape-selector">
       <div className="mb-6 flex items-center justify-between">
         <button
           type="button"
@@ -65,7 +69,14 @@ export default function ShapeSelector() {
         <Button
           className="w-full max-w-md "
           disabled={!picked}
-          onClick={() => picked && setSelected(picked)}
+          onClick={() => {
+            if (picked) {
+              setSelected(picked)
+              if (system && selectedCalc[system]) {
+                navigate(`/${system}/${selectedCalc[system]}/${picked}`)
+              }
+            }
+          }}
         >
           NEXT
         </Button>

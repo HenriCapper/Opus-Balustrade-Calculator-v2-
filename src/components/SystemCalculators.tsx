@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useSelectionStore, type SystemKey } from '@/store/useSelectionStore'
+import { useNavigate } from 'react-router-dom'
 
 // Channel assets
 import smartTop from '@/assets/channels/Smart_Lock_22_2.webp'
@@ -60,6 +61,7 @@ export default function SystemCalculators() {
   const system = useSelectionStore((s) => s.system)
   const selectedCalc = useSelectionStore((s) => s.selectedCalc)
   const setSelectedCalc = useSelectionStore((s) => s.setSelectedCalc)
+  const navigate = useNavigate()
 
   // Decide which active calc key + setter to use
   const { activeKey, setActive } = useMemo(() => {
@@ -76,7 +78,7 @@ export default function SystemCalculators() {
   if (!list.length) return null
 
   return (
-    <section className="mt-10 border-t border-sky-500 pt-10">
+    <section id="system-calculators" className="mt-10 border-t border-sky-500 pt-10">
       <div className="mb-8 flex items-center gap-4">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-600 text-sm font-semibold text-white shadow-inner">
           2
@@ -122,7 +124,16 @@ export default function SystemCalculators() {
                 <p className="mb-4 line-clamp-3 text-xs leading-relaxed text-slate-500 group-hover:text-slate-600">{c.desc}</p>
                 <button
                   type="button"
-                  onClick={() => setActive(c.key)}
+                  onClick={() => {
+                    setActive(c.key)
+                    if (system) {
+                      navigate(`/${system}/${c.key}`)
+                      setTimeout(() => {
+                        const shapeEl = document.getElementById('shape-selector')
+                        if (shapeEl) shapeEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }, 50)
+                    }
+                  }}
                   className="text-xs font-semibold text-sky-700 hover:underline"
                 >
                   Open Calculator →

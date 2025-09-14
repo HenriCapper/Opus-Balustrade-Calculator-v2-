@@ -3,6 +3,7 @@ import spigotsImg from '@/assets/systems/Spigots.webp'
 import standoffsImg from '@/assets/systems/Standoffs.webp'
 import postsImg from '@/assets/systems/Post.webp'
 import { useSelectionStore } from '@/store/useSelectionStore'
+import { useNavigate } from 'react-router-dom'
 
 type SystemDef = {
   key: 'channel' | 'spigots' | 'standoffs' | 'posts'
@@ -43,6 +44,7 @@ const systems: SystemDef[] = [
 export default function SystemSelector() {
   const system = useSelectionStore((s) => s.system)
   const setSystem = useSelectionStore((s) => s.setSystem)
+  const navigate = useNavigate()
 
   return (
     <section>
@@ -62,7 +64,17 @@ export default function SystemSelector() {
               key={s.key}
               type="button"
               disabled={s.disabled}
-              onClick={() => !s.disabled && setSystem(s.key)}
+              onClick={() => {
+                if (s.disabled) return
+                setSystem(s.key)
+                // navigate to /system
+                navigate(`/${s.key}`)
+                // scroll after slight delay to allow layout
+                setTimeout(() => {
+                  const el = document.getElementById('system-calculators')
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }, 50)
+              }}
               className={[
                 // layout + base
                 'group relative flex flex-col items-center overflow-hidden rounded-2xl bg-white p-6 text-center transition-all duration-200 ease-out',
