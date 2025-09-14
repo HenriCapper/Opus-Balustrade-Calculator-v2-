@@ -3,6 +3,7 @@ type Props = {
   disabled?: boolean;
   onClick?: () => void;
   className?: string;
+  type?: 'button' | 'submit' | 'reset';
 };
 
 export default function Button({
@@ -10,10 +11,11 @@ export default function Button({
   disabled,
   onClick,
   className = "",
+  type = 'button',
 }: Props) {
   return (
     <button
-      type="button"
+      type={type}
       disabled={disabled}
       onClick={onClick}
       className={

@@ -1,9 +1,13 @@
 import { useSelectionStore } from "@/store/useSelectionStore";
 import Button from "@/components/ui/Button";
 import { useMemo, useState, useEffect } from "react";
+import { useLayoutStore } from "@/store/useLayoutStore";
+import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
+import { solveSymmetric, aggregatePanels } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
 import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions";
 import FieldGroup from "@/components/ui/FieldGroup";
+import CompliantLayout from "@/components/CompliantLayout";
 
 export default function LayoutForm() {
   const clear = useSelectionStore((s) => s.clearSelected);
@@ -11,6 +15,9 @@ export default function LayoutForm() {
   const system = useSelectionStore((s) => s.system); // channel | spigots | standoffs | posts
   const selectedCalc = useSelectionStore((s) => s.selectedCalc);
   const [focusedSide, setFocusedSide] = useState<number | null>(null);
+  const setLayout = useLayoutStore(s => s.setLayout);
+  const resetLayout = useLayoutStore(s => s.resetLayout);
+  const layoutResult = useLayoutStore(s => s.result);
 
   // Determine current calc key (now supports spigots & standoffs mappings)
   const calcKey: CalcKey | null = useMemo(() => {
@@ -138,7 +145,112 @@ export default function LayoutForm() {
       )[shape]
     : 0;
 
-  // diagram is now a separate component
+  // Track side lengths (A-D) for current shape (only the first N used)
+  const [sideLengths, setSideLengths] = useState<number[]>([0,0,0,0]);
+
+  // Additional controlled selects to capture values for calculation
+  const [windZone, setWindZone] = useState<string | undefined>(defaultWind);
+  const [glassHeight, setGlassHeight] = useState<number | undefined>(defaultHeight);
+  const [fixingType, setFixingType] = useState<string | undefined>(undefined);
+  const [finish, setFinish] = useState<string | undefined>(undefined);
+
+  // Reset layout store when component mounts or URL changes (simple approach)
+  useEffect(() => {
+    resetLayout();
+    // Listen for URL changes (popstate)
+    const handler = () => resetLayout();
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, [resetLayout]);
+
+  // When option sets change, update controlled defaults
+  useEffect(() => {
+    if (optionSets) {
+      setWindZone(optionSets.windZones[0]);
+      setGlassHeight(optionSets.glassHeights[0]);
+      setFinish(optionSets.finishes[0]);
+      setFixingType(undefined);
+    }
+  }, [optionSets]);
+
+  function handleSideChange(index: number, value: string) {
+    const v = value === '' ? 0 : parseFloat(value);
+    setSideLengths(prev => {
+      const next = [...prev];
+      next[index] = isNaN(v) ? 0 : v;
+      return next;
+    });
+  }
+
+  function handleCalculate(e: React.FormEvent) {
+    e.preventDefault();
+    // Basic validation
+    const usedSides = sideLengths.slice(0, sidesCount).filter(v => v > 0);
+    if (!usedSides.length) return; // no lengths entered yet
+    // Lookup PS1 row for spigot systems (currently implementing for sp10/12/13 only)
+    const ps1 = lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
+    const totalRun = usedSides.reduce((a,b)=>a+b,0);
+  let estimatedSpigots: number | undefined;
+  let estimatedPanels: number | undefined;
+  let panelsSummary: string | undefined;
+  let totalSpigots: number | undefined;
+    const notes: string[] = [];
+    if (ps1) {
+      // For now implement symmetric solver per side (no mixed panels) matching legacy simple case.
+      // Gap range: standard mode 14-20 (balustrade) or 14-99 (pool); already computed earlier as gapOptions.
+      const gapMin = fenceCategory === 'balustrade' ? 14 : 14;
+      const gapMax = fenceCategory === 'balustrade' ? 20 : 99;
+      // Panel width cap base 2000, adjust for certain handrails similar to legacy subset
+      let cap = 2000;
+      if (glassThickness === '12' && handrail === 'S25') cap = 1700;
+      else if (handrail === 'S40') cap = 1900;
+      // Solve each side independently, concatenating panels
+      const allPanels: number[] = [];
+      sideLengths.slice(0, sidesCount).forEach(len => {
+        const layout = solveSymmetric(len, gapMin, gapMax, cap, glassMode === 'standard' ? 1 : 25);
+        if (layout) {
+          allPanels.push(...layout.panelWidths);
+        }
+      });
+      if (allPanels.length) {
+        const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0'), hmin:0,hmax:0,zone: windZone||'' } as any);
+        panelsSummary = agg.panelsSummary;
+        totalSpigots = agg.totalSpigots;
+        estimatedPanels = agg.totalPanels;
+        estimatedSpigots = agg.totalSpigots;
+      }
+    } else {
+      notes.push('No PS1 row found for selected parameters (placeholder calculation).');
+    }
+    setLayout({
+      system,
+      calcKey,
+      shape,
+      sideLengths: usedSides,
+      fenceType,
+      fixingType,
+      windZone,
+      glassHeight,
+      glassThickness,
+      handrail,
+      glassMode,
+      gapSize,
+      allowMixedSizes,
+      spigotsPerPanel,
+      finish,
+    }, {
+      totalRun,
+      sideRuns: usedSides,
+      ps1: ps1 ? { internal: ps1.internal, edge: ps1.edge, source: (calcKey as any) } : null,
+  estimatedSpigots,
+  estimatedPanels,
+  panelsSummary,
+  totalSpigots,
+      notes,
+    });
+  }
+
+  const hasResult = !!layoutResult;
 
   return (
     <div>
@@ -161,7 +273,7 @@ export default function LayoutForm() {
           </div>
         </div>
       )}
-      <form className="grid grid-cols-1 gap-6 md:grid-cols-2">
+  <form onSubmit={handleCalculate} className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {Array.from({ length: sidesCount }).map((_, i) => (
           <FieldGroup key={i}>
             <label className="text-xs font-medium text-slate-500">
@@ -171,13 +283,15 @@ export default function LayoutForm() {
               type="number"
               inputMode="numeric"
               min={0}
+      value={sideLengths[i] || ''}
+      onChange={(e)=>handleSideChange(i, e.target.value)}
               onFocus={() => setFocusedSide(i)}
               onBlur={() => setFocusedSide((prev) => (prev === i ? null : prev))}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
             />
           </FieldGroup>
         ))}
-        <FieldGroup>
+  <FieldGroup>
           <label className="text-xs font-medium text-slate-500">Fence type</label>
           <select
             disabled={!optionSets}
@@ -195,22 +309,24 @@ export default function LayoutForm() {
         </FieldGroup>
         <FieldGroup>
           <label className="text-xs font-medium text-slate-500">Fixing type</label>
-            <select
-              disabled={!optionSets}
-              defaultValue=""
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
-            >
-              <option value="">– select –</option>
-              {optionSets?.fixingTypes.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+          <select
+            disabled={!optionSets}
+            value={fixingType || ''}
+            onChange={(e)=> setFixingType(e.target.value || undefined)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
+          >
+            <option value="">– select –</option>
+            {optionSets?.fixingTypes.map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
         </FieldGroup>
         <FieldGroup>
           <label className="text-xs font-medium text-slate-500">Wind zone</label>
           <select
             disabled={!optionSets}
-            defaultValue={defaultWind}
+            value={windZone}
+            onChange={(e)=> setWindZone(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
             {!optionSets && <option>—</option>}
@@ -223,7 +339,8 @@ export default function LayoutForm() {
           <label className="text-xs font-medium text-slate-500">Glass height (mm)</label>
           <select
             disabled={!optionSets}
-            defaultValue={defaultHeight}
+            value={glassHeight}
+            onChange={(e)=> setGlassHeight(parseInt(e.target.value))}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
             {!optionSets && <option>—</option>}
@@ -273,7 +390,8 @@ export default function LayoutForm() {
           <label className="text-xs font-medium text-slate-500">Hardware finish</label>
           <select
             disabled={!optionSets}
-            defaultValue={optionSets?.finishes[0]}
+            value={finish}
+            onChange={(e)=> setFinish(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
             {!optionSets && <option>—</option>}
@@ -353,11 +471,16 @@ export default function LayoutForm() {
         )}
         
         <div className="md:col-span-2">
-          <Button className="mt-4 w-full" disabled>
+          <Button type="submit" className="mt-4 w-full" disabled={!sideLengths.slice(0, sidesCount).some(v=>v>0)}>
             Calculate compliant layout
           </Button>
         </div>
       </form>
+      {hasResult && (
+        <div className="mt-8">
+          <CompliantLayout />
+        </div>
+      )}
     </div>
   );
 }
