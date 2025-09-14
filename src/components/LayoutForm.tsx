@@ -32,11 +32,21 @@ export default function LayoutForm() {
   const [gapSize, setGapSize] = useState<number>(20); // default gap for Standard
   const [allowMixedSizes, setAllowMixedSizes] = useState<boolean>(false); // only for stock mode
   const [spigotsPerPanel, setSpigotsPerPanel] = useState<'auto' | '2' | '3'>('auto');
+  // Glass & handrail selections (now controlled to enable rules logic)
+  const [glassThickness, setGlassThickness] = useState<string | undefined>(defaultThickness);
+  const [handrail, setHandrail] = useState<string>('none');
+  const [handrailLocked, setHandrailLocked] = useState<boolean>(false);
+  const [handrailError, setHandrailError] = useState<string | null>(null);
 
   // Sync fenceType when optionSets changes
   useEffect(() => {
     if (optionSets) {
       setFenceType(optionSets.fenceTypes[0]?.value);
+      setGlassThickness(optionSets.glassThicknesses[0]);
+      // Reset handrail to re-evaluate under new option set
+      setHandrail('none');
+      setHandrailLocked(false);
+      setHandrailError(null);
     }
   }, [optionSets]);
 
@@ -45,6 +55,44 @@ export default function LayoutForm() {
     if (!fenceType) return 'balustrade';
     return fenceType.toLowerCase().includes('pool') ? 'pool' : 'balustrade';
   }, [fenceType]);
+
+  // Whether to display the "No Handrail" option in the dropdown
+  const showNoHandrailOption = useMemo(() => {
+    if (fenceCategory === 'pool') return true; // always optional for pool fences
+    // balustrade: only allow none for sentry glass
+    return glassThickness === '13.52' || glassThickness === '17.52';
+  }, [fenceCategory, glassThickness]);
+
+  // Enforce handrail rules based on glass thickness & fence category
+  useEffect(() => {
+    if (!glassThickness) return;
+    if (fenceCategory === 'pool') {
+      // Pool fence: no mandatory handrail, never lock. Keep selection (allow none)
+      setHandrailLocked(false);
+      setHandrailError(null);
+      return;
+    }
+    const isSentry = glassThickness === '13.52' || glassThickness === '17.52';
+    const isToughened = glassThickness === '12' || glassThickness === '15';
+    if (isSentry) {
+      // Sentry glass: auto no handrail & lock select
+      if (handrail !== 'none') setHandrail('none');
+      setHandrailLocked(true);
+      setHandrailError(null);
+    } else if (isToughened) {
+      // Toughened: must choose a handrail (cannot remain none). Unlock select.
+      setHandrailLocked(false);
+      if (handrail === 'none' && optionSets?.handrails?.length) {
+        setHandrail(optionSets.handrails[0].value);
+      }
+      // Validation: if somehow none, show error
+      setHandrailError(handrail === 'none' ? 'Handrail required for toughened glass balustrade (12mm & 15mm).' : null);
+    } else {
+      // Default fallback
+      setHandrailLocked(false);
+      setHandrailError(null);
+    }
+  }, [glassThickness, fenceCategory, handrail, optionSets]);
 
   // Gap options logic
   const gapOptions = useMemo(() => {
@@ -188,27 +236,38 @@ export default function LayoutForm() {
           <label className="text-xs font-medium text-slate-500">Glass thickness</label>
           <select
             disabled={!optionSets}
-            defaultValue={defaultThickness}
+            value={glassThickness}
+            onChange={(e) => setGlassThickness(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
             {!optionSets && <option>—</option>}
             {optionSets?.glassThicknesses.map((t) => (
-              <option key={t}>{t}</option>
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </FieldGroup>
         <FieldGroup>
-          <label className="text-xs font-medium text-slate-500">Handrail</label>
+          <label className="text-xs font-medium text-slate-500 flex items-center gap-2">Handrail {handrailLocked && <span className="text-[10px] rounded bg-slate-200 px-1 py-0.5 font-normal text-slate-600">Auto</span>}</label>
           <select
-            disabled={!optionSets}
-            defaultValue={optionSets?.handrails[0]?.value}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
+            disabled={!optionSets || handrailLocked}
+            value={handrail}
+            onChange={(e) => setHandrail(e.target.value)}
+            className={`rounded-lg border bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100 ${handrailError ? 'border-red-400' : 'border-slate-300'}`}
           >
-            {!optionSets && <option>—</option>}
+            {showNoHandrailOption && <option value="none">No Handrail</option>}
             {optionSets?.handrails.map((h) => (
               <option key={h.value} value={h.value}>{h.label}</option>
             ))}
           </select>
+          {handrailError && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">{handrailError}</p>
+          )}
+          {handrailLocked && fenceCategory === 'balustrade' && (glassThickness === '13.52' || glassThickness === '17.52') && (
+            <p className="mt-1 text-[11px] text-slate-500">Sentry glass selected – handrail not required.</p>
+          )}
+          {fenceCategory === 'pool' && (
+            <p className="mt-1 text-[11px] text-slate-500">Pool fence – handrail optional.</p>
+          )}
         </FieldGroup>
         <FieldGroup>
           <label className="text-xs font-medium text-slate-500">Hardware finish</label>
