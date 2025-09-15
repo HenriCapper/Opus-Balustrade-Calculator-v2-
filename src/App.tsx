@@ -8,7 +8,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSelectionStore, type SystemKey, type ShapeKey } from "@/store/useSelectionStore";
 import SystemCalculators from "@/components/SystemCalculators";
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Routes, Route } from "react-router-dom";
+import ThreeDView from '@/components/three/ThreeDView';
 import { calculators } from "@/components/SystemCalculators";
 
 function useRouteSync() {
@@ -68,7 +69,7 @@ function useRouteSync() {
   }, [system, selectedCalc, shape]);
 }
 
-function App() {
+function MainWizard() {
   const system = useSelectionStore((s) => s.system);
   const selectedCalc = useSelectionStore((s) => s.selectedCalc);
   const shape = useSelectionStore((s) => s.selected);
@@ -135,4 +136,14 @@ function App() {
   );
 }
 
+function App(){
+  return (
+    <Routes>
+      <Route path="/:system/:calc/:shape/3d-view" element={<ThreeDView/>} />
+      <Route path="/*" element={<MainWizard/>} />
+    </Routes>
+  );
+}
+
 export default App;
+

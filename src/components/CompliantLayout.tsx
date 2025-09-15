@@ -1,9 +1,11 @@
 import { useLayoutStore } from '@/store/useLayoutStore';
 import Button from '@/components/ui/Button';
+import { useNavigate } from 'react-router-dom';
 
 export default function CompliantLayout(){
   const input = useLayoutStore(s=>s.input);
   const result = useLayoutStore(s=>s.result);
+  const navigate = useNavigate();
   if(!input || !result) return null;
   const { ps1 } = result;
   return (
@@ -61,7 +63,15 @@ export default function CompliantLayout(){
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         <Button disabled>Download Plan (PDF)</Button>
         <Button disabled>Download Glass Order (PDF)</Button>
-        <Button disabled>View 3D Plan</Button>
+        <Button
+          disabled={!input || !result || !input.system || !input.calcKey || !input.shape}
+          onClick={() => {
+            if(!input) return;
+            if(input.system && input.calcKey && input.shape){
+              navigate(`/${input.system}/${input.calcKey}/${input.shape}/3d-view`);
+            }
+          }}
+        >View 3D Plan</Button>
       </div>
     </div>
   );

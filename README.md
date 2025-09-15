@@ -1,96 +1,81 @@
-# React + TypeScript + Vite
+# Opus Balustrade Calculator v2
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React + TypeScript + Vite application for configuring balustrade, spigot, standoff and (future) post systems. Includes compliant layout calculation and an experimental 3D plan view.
 
-Currently, two official plugins are available:
+### Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+React 19, Zustand, Framer Motion, TailwindCSS, React Router v6, Three.js via @react-three/fiber and @react-three/drei.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-## Routing (Calculator Selection Flow)
-
-The app now supports deep-linkable URLs reflecting user selections:
+### Routing Flow
 
 Pattern: `/:system?/:calculator?/:shape?`
 
 Examples:
 
-- `/channel` – system selected (Channel) + auto scroll to calculators
-- `/channel/lugano` – Channel system with Lugano calculator selected, prompts for shape
-- `/channel/lugano/corner` – Fully selected path including shape
-- `/spigots/rmp160/inline` – Spigots system, RMP160 calculator, Inline shape
+- `/channel` – system selected
+- `/channel/lugano` – calculator selected, prompts shape
+- `/channel/lugano/corner` – full selection ready for layout input
 
-Valid segments:
-
-- System: `channel`, `spigots`, `standoffs` (`posts` reserved/disabled)
-- Calculator: varies per system (see `SystemCalculators.tsx`)
-- Shape: `inline`, `corner`, `u`, `enclosed`, `custom`
+Valid systems: `channel`, `spigots`, `standoffs` (`posts` reserved). Shapes: `inline`, `corner`, `u`, `enclosed`, `custom`.
 
 Behavior:
 
-- Navigating directly to a valid URL hydrates the Zustand selection store.
-- Changing a selection updates the URL (source of truth sync both ways).
-- Invalid first segment redirects to `/`.
-- Smooth scroll occurs when selecting a system (to calculators) and calculator (to shape selector).
+- Direct navigation hydrates Zustand store
+- URL kept in sync with user selections
+- Invalid first segment redirects to `/`
 
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 3D Plan View (Beta)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Route pattern: `/:system/:calculator/:shape/3d-view`
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Access via the `View 3D Plan` button after a compliant layout is calculated. A refresh without state redirects back to the calculator form.
+
+Current capabilities:
+
+* Multi‑panel segmentation per side (symmetric legacy solver) with uniform gap placement.
+* Per‑panel spigot placement using PS1 internal + edge spacing (legacy formula) with in‑3D override (Auto / 2 / 3).
+* `SceneCanvas` provides camera, lights, grid and HDR environment.
+* `Model` attempts GLB load (`src/assets/<group>/models/<code>.glb`) else falls back to primitives.
+
+Upcoming parity work:
+
+* Gates (hinge / latch panel adjustments).
+* Mixed / stock mode non‑uniform panels & size optimisation.
+* Ground polygon + gap visualization for complex & custom shapes.
+* Advanced in‑3D recalculation (panel sizing mode changes) & export (GLB / image / PDF overlay).
+
+---
+
+### Development Scripts
+
+`pnpm dev` (or `npm run dev`) – Start Vite dev server `pnpm build` – Type check + production build `pnpm preview` – Preview built app
+
+---
+
+### ESLint & Type Safety
+
+Type-aware rules configured via `tsconfig.app.json` & `tsconfig.node.json`. Extend eslint config for stricter style/preferences as needed.
+
+---
+
+### Environment / Assets
+
+HDR environment: `src/assets/threejs/citrus_orchard_road_puresky_4k.hdr`. Replace or add more HDRIs as required.
+
+---
+
+### Contributing
+
+1. Create feature branch
+2. Ensure no type or lint errors (`pnpm lint`)
+3. Submit PR with concise description & screenshots (especially for 3D changes)
+
+---
+
+### License
+
+Internal use – adapt as necessary.

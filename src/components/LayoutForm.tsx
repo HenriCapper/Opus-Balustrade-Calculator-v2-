@@ -195,22 +195,22 @@ export default function LayoutForm() {
   let panelsSummary: string | undefined;
   let totalSpigots: number | undefined;
     const notes: string[] = [];
+    let sidePanelLayouts: { panelWidths: number[]; gap: number; adjustedLength: number;}[] = [];
+    let allPanels: number[] = [];
     if (ps1) {
-      // For now implement symmetric solver per side (no mixed panels) matching legacy simple case.
-      // Gap range: standard mode 14-20 (balustrade) or 14-99 (pool); already computed earlier as gapOptions.
+      // Symmetric solver per side (legacy simple case). Mixed sizes & gates not yet.
       const gapMin = fenceCategory === 'balustrade' ? 14 : 14;
       const gapMax = fenceCategory === 'balustrade' ? 20 : 99;
-      // Panel width cap base 2000, adjust for certain handrails similar to legacy subset
       let cap = 2000;
       if (glassThickness === '12' && handrail === 'S25') cap = 1700;
       else if (handrail === 'S40') cap = 1900;
-      // Solve each side independently, concatenating panels
-      const allPanels: number[] = [];
-      sideLengths.slice(0, sidesCount).forEach(len => {
+      sidePanelLayouts = sideLengths.slice(0, sidesCount).map(len => {
         const layout = solveSymmetric(len, gapMin, gapMax, cap, glassMode === 'standard' ? 1 : 25);
         if (layout) {
           allPanels.push(...layout.panelWidths);
+          return layout;
         }
+        return { panelWidths: [len], gap: gapSize, adjustedLength: len }; // fallback single panel
       });
       if (allPanels.length) {
         const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0'), hmin:0,hmax:0,zone: windZone||'' } as any);
@@ -246,6 +246,8 @@ export default function LayoutForm() {
   estimatedPanels,
   panelsSummary,
   totalSpigots,
+      sidePanelLayouts,
+      allPanels,
       notes,
     });
   }

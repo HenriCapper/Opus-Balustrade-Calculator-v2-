@@ -34,6 +34,14 @@ export interface LayoutCalculationResult {
   notes?: string[];
   panelsSummary?: string; // e.g. "4 × @970.00 mm (2 spigots each)"
   totalSpigots?: number; // precise total spigots
+  // New detailed per-side panel data for 3D view
+  sidePanelLayouts?: {
+    panelWidths: number[]; // ordered across the side
+    gap: number;           // uniform gap between panels & ends (legacy symmetric solver)
+    adjustedLength: number; // side length used during solving (may equal original)
+  }[];
+  // Flattened list of all panel widths (ordered by sides) for convenience
+  allPanels?: number[];
 }
 
 export interface LayoutState {
