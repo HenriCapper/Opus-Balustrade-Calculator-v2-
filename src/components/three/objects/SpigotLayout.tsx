@@ -1,131 +1,265 @@
-import { useLayoutStore } from '@/store/useLayoutStore';
-import type { ComponentProps } from 'react';
-import { useMemo } from 'react';
-import * as THREE from 'three';
-import { Model } from './Model';
+import { useLayoutStore } from "@/store/useLayoutStore";
+import type { ComponentProps } from "react";
+import { useMemo, useRef } from "react";
+import * as THREE from "three";
+import { Model } from "./Model";
+import { Text } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
 
-// Panel geometry reused; we scale X (width) & Y (height) per panel
-const basePanelGeom = new THREE.PlaneGeometry(1, 1);
+// Billboard text component
+function FacingText({
+  children,
+  position,
+  fontSize,
+  anchorX = "center",
+  anchorY = "middle",
+  outlineWidth = 0,
+  outlineColor = "#ffffff",
+  color = "#0f172a",
+}: any) {
+  const ref = useRef<THREE.Group>(null!);
+  const { camera } = useThree();
+  useFrame(() => {
+    if (ref.current) ref.current.quaternion.copy(camera.quaternion);
+  });
+  return (
+    <group ref={ref} position={position}>
+      <Text
+        fontSize={fontSize}
+        color={color}
+        anchorX={anchorX}
+        anchorY={anchorY}
+        outlineWidth={outlineWidth}
+        outlineColor={outlineColor}
+      >
+        {children}
+      </Text>
+    </group>
+  );
+}
 
-// Helper: legacy direction sequence for orthogonal shapes (INLINE, L, U, BOX)
-// NOTE: For now we treat every provided side length as a straight orthogonal leg turning 90° CCW.
-// This matches legacy calculators for non-custom shapes without gates.
-function buildSegments(lengths: number[]){
-  const dirs = [new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,1), new THREE.Vector3(-1,0,0), new THREE.Vector3(0,0,-1)];
-  const segs: { start: THREE.Vector3; end: THREE.Vector3; length: number; dir: THREE.Vector3; index: number }[] = [];
+// Base panel geometry (box to show thickness)
+const basePanelGeom = new THREE.BoxGeometry(1, 1, 1);
+
+function buildSegments(lengths: number[]) {
+  const dirs = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 0, -1),
+  ];
+  const segs: {
+    start: THREE.Vector3;
+    end: THREE.Vector3;
+    length: number;
+    dir: THREE.Vector3;
+    index: number;
+  }[] = [];
   let cursor = new THREE.Vector3();
-  lengths.forEach((len,i)=>{
+  lengths.forEach((len, i) => {
     const dir = dirs[i % 4];
     const end = cursor.clone().add(dir.clone().multiplyScalar(len));
-    segs.push({ start: cursor.clone(), end, length: len, dir: dir.clone(), index: i });
+    segs.push({
+      start: cursor.clone(),
+      end,
+      length: len,
+      dir: dir.clone(),
+      index: i,
+    });
     cursor = end;
   });
   return segs;
 }
 
-// Compute spigot positions for a panel width using legacy formula.
-function computeSpigotsForPanel(panelWidth: number, internal: number, edge: number, mode: 'auto'|'2'|'3'){  
-  // Determine theoretical required spigots
-  let needed = Math.max(2, Math.ceil((panelWidth - 2*edge)/internal)+1);
-  if(mode === '2') needed = 2; else if (mode==='3') needed = Math.min(Math.max(3, needed), 3);
-  // Clamp typical upper bound (legacy often allowed up to 4 in auto)
-  if(mode==='auto') needed = Math.min(needed, 4);
-  // Return fractional distances from left edge (0..panelWidth)
-  const span = panelWidth - 2*edge;
+function computeSpigotsForPanel(
+  panelWidth: number,
+  internal: number,
+  edge: number,
+  mode: "auto" | "2" | "3"
+) {
+  let needed = Math.max(2, Math.ceil((panelWidth - 2 * edge) / internal) + 1);
+  if (mode === "2") needed = 2;
+  else if (mode === "3") needed = Math.min(Math.max(3, needed), 3);
+  if (mode === "auto") needed = Math.min(needed, 4);
+  const span = panelWidth - 2 * edge;
   const gaps = needed - 1;
   const spacing = gaps > 0 ? span / gaps : span;
   const positions: number[] = [];
-  for(let i=0;i<needed;i++) positions.push(edge + spacing * i);
+  for (let i = 0; i < needed; i++) positions.push(edge + spacing * i);
   return positions;
 }
 
-export function SpigotLayout(props: ComponentProps<'group'>){
-  const input = useLayoutStore(s=>s.input);
-  const result = useLayoutStore(s=>s.result);
+export function SpigotLayout(props: ComponentProps<"group">) {
+  const input = useLayoutStore((s) => s.input);
+  const result = useLayoutStore((s) => s.result);
 
-  const data = useMemo(()=>{
-    if(!input || !result) return null;
-  const { sideLengths, glassHeight = 1100 } = input;
-    if(!sideLengths || !sideLengths.length) return null;
+  const data = useMemo(() => {
+    if (!input || !result) return null;
+    const { sideLengths, glassHeight = 1100 } = input;
+    if (!sideLengths || !sideLengths.length) return null;
     const ps1 = result.ps1;
     const segments = buildSegments(sideLengths);
     const internal = ps1?.internal ?? 800;
     const edge = ps1?.edge ?? 250;
-    const mode: 'auto'|'2'|'3' = input.spigotsPerPanel || 'auto';
+    const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
 
-    // Multi-panel: use stored sidePanelLayouts if present
     const layouts = result.sidePanelLayouts;
-    type PanelMesh = { mid: THREE.Vector3; dir: THREE.Vector3; width: number; height: number; seg: any; spigotOffsets: number[] };
+    type PanelMesh = {
+      mid: THREE.Vector3;
+      dir: THREE.Vector3;
+      width: number;
+      height: number;
+      seg: any;
+      spigotOffsets: number[];
+    };
     const panelMeshes: PanelMesh[] = [];
-    if(layouts && layouts.length){
-      layouts.forEach((layout, i)=>{
+    if (layouts && layouts.length) {
+      layouts.forEach((layout, i) => {
         const seg = segments[i];
-        if(!seg) return; // safety
+        if (!seg) return;
         const { panelWidths, gap } = layout;
-        let cursor = gap; // start gap from segment start
-        panelWidths.forEach(w => {
+        let cursor = gap;
+        panelWidths.forEach((w) => {
           const startOff = cursor;
-          const midLocal = seg.dir.clone().multiplyScalar(startOff + w/2);
+          const midLocal = seg.dir.clone().multiplyScalar(startOff + w / 2);
           const mid = seg.start.clone().add(midLocal);
-          const spigotOffsets = computeSpigotsForPanel(w, internal, edge, mode).map(off => startOff + off);
-          panelMeshes.push({ mid, dir: seg.dir.clone(), width: w, height: glassHeight, seg, spigotOffsets });
-          cursor += w + gap; // panel width + gap after
+          const spigotOffsets = computeSpigotsForPanel(
+            w,
+            internal,
+            edge,
+            mode
+          ).map((off) => startOff + off);
+          panelMeshes.push({
+            mid,
+            dir: seg.dir.clone(),
+            width: w,
+            height: glassHeight,
+            seg,
+            spigotOffsets,
+          });
+          cursor += w + gap;
         });
       });
     } else {
-      // Fallback single panel per segment (previous behavior)
-      segments.forEach(seg => {
+      segments.forEach((seg) => {
         let width = seg.length;
-        if(width <= 0) width = 500;
-        const midLocal = seg.dir.clone().multiplyScalar(width/2);
+        if (width <= 0) width = 500;
+        const midLocal = seg.dir.clone().multiplyScalar(width / 2);
         const mid = seg.start.clone().add(midLocal);
-        const spigotOffsets = computeSpigotsForPanel(width, internal, edge, mode);
-        panelMeshes.push({ mid, dir: seg.dir.clone(), width, height: glassHeight, seg, spigotOffsets });
+        const spigotOffsets = computeSpigotsForPanel(
+          width,
+          internal,
+          edge,
+          mode
+        );
+        panelMeshes.push({
+          mid,
+          dir: seg.dir.clone(),
+          width,
+          height: glassHeight,
+          seg,
+          spigotOffsets,
+        });
       });
     }
 
-    const spigots = panelMeshes.flatMap(panel => {
-      return panel.spigotOffsets.map(off => ({
-        position: panel.seg.start.clone().add(panel.dir.clone().multiplyScalar(off)),
-        segIndex: panel.seg.index
-      }));
-    });
+    const spigots = panelMeshes.flatMap((panel) =>
+      panel.spigotOffsets.map((off) => ({
+        position: panel.seg.start
+          .clone()
+          .add(panel.dir.clone().multiplyScalar(off)),
+        segIndex: panel.seg.index,
+      }))
+    );
 
     return { panelMeshes, spigots };
   }, [input, result]);
 
-  if(!data) return null;
+  if (!data) return null;
+  const glassThicknessMm = (() => {
+    const raw = input?.glassThickness || "12";
+    const n = parseFloat(raw);
+    return isNaN(n) ? 12 : n;
+  })();
+  const thicknessM = glassThicknessMm * 0.001;
   const { panelMeshes, spigots } = data;
 
   return (
     <group {...props}>
-      {/* Ground plane */}
-      <mesh rotation={[-Math.PI/2,0,0]} receiveShadow position={[0,-0.001,0]}>
-        <planeGeometry args={[500,500]} />
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+        position={[0, -0.001, 0]}
+      >
+        <planeGeometry args={[500, 500]} />
         <meshStandardMaterial color="#ffffff" />
       </mesh>
-  {/* Panels (one per side for now – extend to multi-panel once per-side solver data is stored) */}
-      {panelMeshes.map((p,i)=>{
-        // Convert mm->m for positions & size
+      {panelMeshes.map((p, i) => {
         const scale = 0.001;
         const mid = p.mid.clone().multiplyScalar(scale);
         const widthM = p.width * scale;
         const heightM = p.height * scale;
-        // Build quaternion to align plane so its local +X matches segment direction horizontally
         const dirUnit = p.dir.clone().normalize();
-        // We start with plane (1x1) facing +Z? In PlaneGeometry(1,1) default normal +Z, we want panel normal perpendicular to dir, so create basis.
-        const normal = new THREE.Vector3(dirUnit.z, 0, -dirUnit.x).normalize(); // rotate dir 90° CCW around Y
-        const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), normal);
+        const normal = new THREE.Vector3(dirUnit.z, 0, -dirUnit.x).normalize();
+        const quat = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          normal
+        );
         return (
-          <mesh key={i} position={[mid.x, heightM/2, mid.z]} geometry={basePanelGeom} quaternion={quat} scale={[widthM, heightM, 1]} castShadow>
-            <meshStandardMaterial color="#93c5fd" transparent opacity={0.35} side={THREE.DoubleSide} />
-          </mesh>
+          <group key={i}>
+            <mesh
+              position={[mid.x, heightM / 2, mid.z]}
+              geometry={basePanelGeom}
+              quaternion={quat}
+              scale={[widthM, heightM, thicknessM]}
+              castShadow
+            >
+              <meshStandardMaterial
+                color="#93c5fd"
+                transparent
+                opacity={0.35}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <FacingText
+              position={[mid.x, heightM + 0.03, mid.z]}
+              fontSize={Math.min(0.045, Math.max(0.025, widthM * 0.15))}
+              anchorX="center"
+              anchorY="bottom"
+              outlineWidth={0.0015}
+              outlineColor="#ffffff"
+            >{`${p.width.toFixed(0)} mm`}</FacingText>
+          </group>
         );
       })}
-  {/* Spigots (derived from panel widths & ps1 spacing) */}
-      {spigots.map((s,i)=>{
-        const scale = 0.001; // mm->m
-        return <Model key={i} kind="spigot" code={(input?.calcKey||'sp12')} position={[s.position.x*scale, 0, s.position.z*scale]} scale={0.65} />;
+      {panelMeshes[0] &&
+        (() => {
+          const scale = 0.001;
+          const p = panelMeshes[0];
+          const mid = p.mid.clone().multiplyScalar(scale);
+          const heightM = p.height * scale;
+          return (
+            <FacingText
+              position={[mid.x -0.8, heightM - 0.5, mid.z -0.05]}
+              fontSize={0.04}
+              anchorX="center"
+              anchorY="bottom"
+              outlineWidth={0.002}
+              outlineColor="#ffffff"
+            >{`${p.height} mm glass height`}</FacingText>
+          );
+        })()}
+      {spigots.map((s, i) => {
+        const scale = 0.001;
+        return (
+          <Model
+            key={i}
+            kind="spigot"
+            code={input?.calcKey || "sp12"}
+            position={[s.position.x * scale, 0, s.position.z * scale]}
+            scale={0.65}
+          />
+        );
       })}
     </group>
   );
