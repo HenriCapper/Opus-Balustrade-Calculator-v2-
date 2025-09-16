@@ -68,6 +68,27 @@ HDR environment: `src/assets/threejs/citrus_orchard_road_puresky_4k.hdr`. Replac
 
 ---
 
+### Custom Shape Designer (Beta)
+
+The React custom shape designer (shape key `custom`) replicates legacy freehand drafting logic:
+
+* Click to add sequential points (polyline). Each segment snaps to 5° and lengths snap to 5 mm increments.
+* Ctrl + mouse wheel: zoom. Middle‑mouse drag or Ctrl + drag: pan.
+* Side list (A, B, C …) auto‑generates and values are editable; editing adjusts geometry proportionally along the same bearing.
+* Dynamic side lengths flow into the standard compliant layout calculation pipeline identically to predefined shapes.
+* Arbitrary angles (snapped to 5°) are now reproduced in the 3D plan view – segments render exactly along drawn bearings instead of forced 90° turns.
+
+Planned enhancements for full legacy parity:
+
+* Corner joiner classification (90° vs adjustable) & codes
+* Multiple disjoint polylines & resume drawing from existing nodes
+* Gate designation per side + hardware logic
+* Undo/redo history expansion & PDF/3D integration extras
+
+> NOTE: Initial implementation focuses on core drafting + length export. Provide feedback to prioritise the remaining parity tasks.
+
+---
+
 ### Contributing
 
 1. Create feature branch

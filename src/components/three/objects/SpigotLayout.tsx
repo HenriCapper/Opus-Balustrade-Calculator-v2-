@@ -41,31 +41,34 @@ function FacingText({
 // Base panel geometry (box to show thickness)
 const basePanelGeom = new THREE.BoxGeometry(1, 1, 1);
 
-function buildSegments(lengths: number[]) {
+function buildSegments(lengths: number[], customVectors?: { dx: number; dy: number; length: number }[]) {
+  const segs: { start: THREE.Vector3; end: THREE.Vector3; length: number; dir: THREE.Vector3; index: number; }[] = [];
+  let cursor = new THREE.Vector3();
+  if (customVectors && customVectors.length === lengths.length) {
+    customVectors.forEach((v, i) => {
+      // dx, dy are in mm: map dx -> X, dy -> Z for plan view
+      const dir = new THREE.Vector3(v.dx, 0, v.dy);
+      const len = v.length; // already mm
+      // Normalize direction then scale by length to get end point
+      const dNorm = dir.clone();
+      if (dNorm.lengthSq() === 0) dNorm.set(1,0,0); else dNorm.normalize();
+      const end = cursor.clone().add(dNorm.clone().multiplyScalar(len));
+      segs.push({ start: cursor.clone(), end, length: len, dir: dNorm.clone(), index: i });
+      cursor = end;
+    });
+    return segs;
+  }
+  // Fallback legacy orthogonal pattern
   const dirs = [
     new THREE.Vector3(1, 0, 0),
     new THREE.Vector3(0, 0, 1),
     new THREE.Vector3(-1, 0, 0),
     new THREE.Vector3(0, 0, -1),
   ];
-  const segs: {
-    start: THREE.Vector3;
-    end: THREE.Vector3;
-    length: number;
-    dir: THREE.Vector3;
-    index: number;
-  }[] = [];
-  let cursor = new THREE.Vector3();
   lengths.forEach((len, i) => {
     const dir = dirs[i % 4];
     const end = cursor.clone().add(dir.clone().multiplyScalar(len));
-    segs.push({
-      start: cursor.clone(),
-      end,
-      length: len,
-      dir: dir.clone(),
-      index: i,
-    });
+    segs.push({ start: cursor.clone(), end, length: len, dir: dir.clone(), index: i });
     cursor = end;
   });
   return segs;
@@ -95,10 +98,10 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   const data = useMemo(() => {
     if (!input || !result) return null;
-    const { sideLengths, glassHeight = 1100 } = input;
+  const { sideLengths, glassHeight = 1100, customVectors } = input as any;
     if (!sideLengths || !sideLengths.length) return null;
     const ps1 = result.ps1;
-    const segments = buildSegments(sideLengths);
+  const segments = buildSegments(sideLengths, customVectors);
     const internal = ps1?.internal ?? 800;
     const edge = ps1?.edge ?? 250;
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
@@ -191,6 +194,18 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   })();
   const thicknessM = glassThicknessMm * 0.001;
   const { panelMeshes, spigots } = data;
+
+  // Compute dynamic ground plane size (optional visual aid for custom shapes)
+  const bounds = new THREE.Box3();
+  panelMeshes.forEach(p => {
+    bounds.expandByPoint(p.mid.clone());
+  });
+  const size = new THREE.Vector3();
+  bounds.getSize(size);
+  const planeW = Math.max(500, size.x + 400);
+  const planeH = Math.max(500, size.z + 400);
+  const center = new THREE.Vector3();
+  bounds.getCenter(center);
 
   return (
     <group {...props}>

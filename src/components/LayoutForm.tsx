@@ -5,6 +5,7 @@ import { useLayoutStore } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { solveSymmetric, aggregatePanels } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
+import CustomShapeDesigner from "@/components/CustomShapeDesigner";
 import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions";
 import FieldGroup from "@/components/ui/FieldGroup";
 import CompliantLayout from "@/components/CompliantLayout";
@@ -147,6 +148,8 @@ export default function LayoutForm() {
 
   // Track side lengths (A-D) for current shape (only the first N used)
   const [sideLengths, setSideLengths] = useState<number[]>([0,0,0,0]);
+  // Custom shape dynamic runs (A,B,C,...)
+  const [customRuns, setCustomRuns] = useState<{id:string; length:number; dx:number; dy:number;}[]>([]);
 
   // Additional controlled selects to capture values for calculation
   const [windZone, setWindZone] = useState<string | undefined>(defaultWind);
@@ -185,7 +188,9 @@ export default function LayoutForm() {
   function handleCalculate(e: React.FormEvent) {
     e.preventDefault();
     // Basic validation
-    const usedSides = sideLengths.slice(0, sidesCount).filter(v => v > 0);
+    const usedSides = shape === 'custom'
+      ? customRuns.map(r => r.length).filter(v=>v>0)
+      : sideLengths.slice(0, sidesCount).filter(v => v > 0);
     if (!usedSides.length) return; // no lengths entered yet
     // Lookup PS1 row for spigot systems (currently implementing for sp10/12/13 only)
     const ps1 = lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
@@ -204,7 +209,13 @@ export default function LayoutForm() {
       let cap = 2000;
       if (glassThickness === '12' && handrail === 'S25') cap = 1700;
       else if (handrail === 'S40') cap = 1900;
-      sidePanelLayouts = sideLengths.slice(0, sidesCount).map(len => {
+      const baseSideArray = shape === 'custom' ? customRuns.map(r=>r.length) : sideLengths.slice(0, sidesCount);
+      if (shape === 'custom') {
+        // Dev trace – remove or gate behind env flag later
+        // eslint-disable-next-line no-console
+        console.log('[custom-shape] calculating with runs', customRuns);
+      }
+      sidePanelLayouts = baseSideArray.map(len => {
         const layout = solveSymmetric(len, gapMin, gapMax, cap, glassMode === 'standard' ? 1 : 25);
         if (layout) {
           allPanels.push(...layout.panelWidths);
@@ -226,7 +237,8 @@ export default function LayoutForm() {
       system,
       calcKey,
       shape,
-      sideLengths: usedSides,
+  sideLengths: usedSides,
+      ...(shape === 'custom' ? { customVectors: customRuns.map(r => ({ dx: r.dx, dy: r.dy, length: r.length, id: r.id })) } : {}),
       fenceType,
       fixingType,
       windZone,
@@ -273,6 +285,11 @@ export default function LayoutForm() {
           <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <ShapeDiagram shape={shape} focusedSide={focusedSide} />
           </div>
+        </div>
+      )}
+      {shape === 'custom' && (
+        <div className="mb-6">
+          <CustomShapeDesigner onChange={(runs)=> setCustomRuns(runs)} />
         </div>
       )}
   <form onSubmit={handleCalculate} className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -473,9 +490,16 @@ export default function LayoutForm() {
         )}
         
         <div className="md:col-span-2">
-          <Button type="submit" className="mt-4 w-full" disabled={!sideLengths.slice(0, sidesCount).some(v=>v>0)}>
-            Calculate compliant layout
-          </Button>
+          {(() => {
+            const hasStandard = sideLengths.slice(0, sidesCount).some(v=>v>0);
+            const hasCustom = shape === 'custom' && customRuns.some(r=>r.length > 0);
+            const disabled = shape === 'custom' ? !hasCustom : !hasStandard;
+            return (
+              <Button type="submit" className="mt-4 w-full" disabled={disabled}>
+                Calculate compliant layout
+              </Button>
+            );
+          })()}
         </div>
       </form>
       {hasResult && (

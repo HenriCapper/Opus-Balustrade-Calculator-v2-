@@ -5,6 +5,9 @@ export interface LayoutCalculationInput {
   calcKey: string | null;
   shape: string | null;
   sideLengths: number[]; // mm per side A,B,C,D (empty entries ignored)
+  // For custom shape: ordered vectors (dx, dy in mm) describing each run direction.
+  // If provided, 3D layout will follow these vectors instead of orthogonal pattern.
+  customVectors?: { dx: number; dy: number; length: number; id?: string }[];
   fenceType?: string;
   fixingType?: string;
   windZone?: string;
