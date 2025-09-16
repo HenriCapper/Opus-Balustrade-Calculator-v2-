@@ -164,12 +164,20 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     }
 
     const spigots = panelMeshes.flatMap((panel) =>
-      panel.spigotOffsets.map((off) => ({
-        position: panel.seg.start
+      panel.spigotOffsets.map((off) => {
+        const position = panel.seg.start
           .clone()
-          .add(panel.dir.clone().multiplyScalar(off)),
-        segIndex: panel.seg.index,
-      }))
+          .add(panel.dir.clone().multiplyScalar(off));
+        // Outward normal (right-hand turn pattern like legacy calculators): rotate dir 90° CCW on XZ plane
+        const dirUnit = panel.dir.clone().normalize();
+        const outward = new THREE.Vector3(dirUnit.z, 0, -dirUnit.x).normalize();
+        // We want model +Z axis to face outward. Assume GLB authored with +Z forward, +Y up.
+        const quat = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          outward
+        );
+        return { position, segIndex: panel.seg.index, quat };
+      })
     );
 
     return { panelMeshes, spigots };
@@ -258,6 +266,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             code={input?.calcKey || "sp12"}
             position={[s.position.x * scale, 0, s.position.z * scale]}
             scale={0.65}
+            quaternion={s.quat}
           />
         );
       })}

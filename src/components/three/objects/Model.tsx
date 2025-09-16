@@ -1,14 +1,19 @@
 import { useGLTF } from '@react-three/drei';
 import { useMemo } from 'react';
+import * as THREE from 'three';
 
 type ModelProps = {
   kind: 'spigot' | 'channel' | 'standoff' | 'post';
   code: string; // e.g. sp12
   scale?: number;
-} & React.ComponentPropsWithoutRef<'group'>;
+  /** Optional Euler rotation (radians) */
+  rotation?: [number, number, number];
+  /** Optional quaternion override */
+  quaternion?: THREE.Quaternion;
+} & Omit<React.ComponentPropsWithoutRef<'group'>, 'rotation'>;
 
 // Dynamic path resolution: looks for /src/assets/<kind>s/models/<code>.glb
-export function Model({ kind, code, scale = 1, ...rest }: ModelProps){
+export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: ModelProps){
   const normCode = code.toUpperCase();
   const path = useMemo(()=> `/models/${kind === 'spigot' ? 'spigots' : kind + 's'}/${normCode}.glb`, [kind, normCode]);
   let gltf: any;
@@ -53,7 +58,13 @@ export function Model({ kind, code, scale = 1, ...rest }: ModelProps){
     );
   }
   return (
-    <group {...rest} dispose={null}>
+    <group
+      {...rest}
+      // Apply quaternion if provided; else use rotation array; else none.
+      rotation={quaternion ? undefined : rotation}
+      quaternion={quaternion as any}
+      dispose={null}
+    >
       <primitive object={gltf.scene.clone()} scale={scale} />
     </group>
   );
