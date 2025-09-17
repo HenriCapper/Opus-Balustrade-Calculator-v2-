@@ -202,8 +202,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   });
   const size = new THREE.Vector3();
   bounds.getSize(size);
-  const planeW = Math.max(500, size.x + 400);
-  const planeH = Math.max(500, size.z + 400);
+  // const planeW = Math.max(500, size.x + 400);
+  // const planeH = Math.max(500, size.z + 400);
   const center = new THREE.Vector3();
   bounds.getCenter(center);
 
