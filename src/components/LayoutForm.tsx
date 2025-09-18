@@ -1,6 +1,6 @@
 import { useSelectionStore } from "@/store/useSelectionStore";
 import Button from "@/components/ui/Button";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useLayoutStore } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
@@ -21,6 +21,8 @@ export default function LayoutForm() {
   const setLayout = useLayoutStore(s => s.setLayout);
   const resetLayout = useLayoutStore(s => s.resetLayout);
   const layoutResult = useLayoutStore(s => s.result);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [formWarning, setFormWarning] = useState<string>("");
 
   // Determine current calc key (now supports spigots & standoffs mappings)
   const calcKey: CalcKey | null = useMemo(() => {
@@ -68,17 +70,43 @@ export default function LayoutForm() {
 
   // Whether to display the "No Handrail" option in the dropdown
   const showNoHandrailOption = useMemo(() => {
-    if (fenceCategory === 'pool') return true; // always optional for pool fences
+    if (fenceCategory === 'pool') return true; // pool: no handrail used (locked to none)
     // balustrade: only allow none for sentry glass
     return glassThickness === '13.52' || glassThickness === '17.52';
   }, [fenceCategory, glassThickness]);
+
+  // Filtered lists based on rules
+  const filteredGlassThicknesses = useMemo(() => {
+    if (!optionSets) return [] as string[];
+    let list = optionSets.glassThicknesses;
+    if (fenceCategory === 'pool') {
+      // Pool fence: only 12mm or 15mm
+      list = list.filter((t) => t === '12' || t === '15');
+    }
+    return list;
+  }, [optionSets, fenceCategory]);
+
+  const filteredHandrails = useMemo(() => {
+    if (!optionSets) return [] as { value: string; label: string }[];
+    if (fenceCategory === 'pool') {
+      // Pool fence: no handrail selectable
+      return [];
+    }
+    // Balustrade: S25 available only if 12mm glass is selected
+    let list = optionSets.handrails;
+    if (glassThickness !== '12') {
+      list = list.filter((h) => h.value !== 'S25');
+    }
+    return list;
+  }, [optionSets, fenceCategory, glassThickness]);
 
   // Enforce handrail rules based on glass thickness & fence category
   useEffect(() => {
     if (!glassThickness) return;
     if (fenceCategory === 'pool') {
-      // Pool fence: no mandatory handrail, never lock. Keep selection (allow none)
-      setHandrailLocked(false);
+      // Pool fence: do not use handrail – lock to none
+      if (handrail !== 'none') setHandrail('none');
+      setHandrailLocked(true);
       setHandrailError(null);
       return;
     }
@@ -103,6 +131,21 @@ export default function LayoutForm() {
       setHandrailError(null);
     }
   }, [glassThickness, fenceCategory, handrail, optionSets]);
+
+  // Keep handrail selection valid against filtered options
+  useEffect(() => {
+    if (fenceCategory === 'pool') {
+      if (handrail !== 'none') setHandrail('none');
+      return;
+    }
+    const allowed = new Set(filteredHandrails.map((h) => h.value));
+    if (handrail !== 'none' && !allowed.has(handrail)) {
+      if (filteredHandrails.length) setHandrail(filteredHandrails[0].value);
+      else setHandrail('none');
+    }
+  }, [filteredHandrails, fenceCategory]);
+
+  
 
   // Gap options logic
   const gapOptions = useMemo(() => {
@@ -159,6 +202,30 @@ export default function LayoutForm() {
   const [fixingType, setFixingType] = useState<string | undefined>(undefined);
   const [finish, setFinish] = useState<string | undefined>(undefined);
 
+  // Enforce pool fence glass thickness rules and force 15mm in extra high wind zone
+  useEffect(() => {
+    if (!optionSets) return;
+    const allowed = filteredGlassThicknesses;
+    const wz = (windZone || '').toLowerCase();
+    const extraHigh = wz.includes('extra') && wz.includes('high');
+    if (fenceCategory === 'pool') {
+      // If extra high – force 15mm
+      if (extraHigh && glassThickness !== '15') {
+        setGlassThickness('15');
+        return;
+      }
+      // Ensure current thickness is allowed (12 or 15)
+      if (!allowed.includes(glassThickness || '')) {
+        setGlassThickness(extraHigh ? '15' : (allowed[0] || '12'));
+      }
+    } else {
+      // Non-pool: just ensure current is part of available list
+      if (glassThickness && !optionSets.glassThicknesses.includes(glassThickness)) {
+        setGlassThickness(optionSets.glassThicknesses[0]);
+      }
+    }
+  }, [optionSets, fenceCategory, windZone, glassThickness, filteredGlassThicknesses]);
+
   // Reset layout store when component mounts or URL changes (simple approach)
   useEffect(() => {
     resetLayout();
@@ -192,8 +259,13 @@ export default function LayoutForm() {
     // Basic validation
     const usedSides = shape === 'custom'
       ? customRuns.map(r => r.length).filter(v=>v>0)
-      : sideLengths.slice(0, sidesCount).filter(v => v > 0);
-    if (!usedSides.length) return; // no lengths entered yet
+      : sideLengths.slice(0, sidesCount);
+    if (shape !== 'custom') {
+      // Require all shown sides and min 2000mm
+      if (!usedSides.length || !usedSides.every(v => v >= 2000)) return;
+    } else {
+      if (!usedSides.length) return; // no lengths entered yet
+    }
     // Lookup PS1 row (spigots vs standoffs vs channels)
     const isStandoffs = calcKey === 'sd50' || calcKey === 'pf150' || calcKey === 'sd100' || calcKey === 'pradis';
     const isChannel = calcKey === 'smartlock_top' || calcKey === 'smartlock_side' || calcKey === 'lugano' || calcKey === 'vista';
@@ -230,7 +302,9 @@ export default function LayoutForm() {
       let cap = 2000;
       if (glassThickness === '12' && handrail === 'S25') cap = 1700;
       else if (handrail === 'S40') cap = 1900;
-      const baseSideArray = shape === 'custom' ? customRuns.map(r=>r.length) : sideLengths.slice(0, sidesCount);
+      const baseSideArray = shape === 'custom'
+        ? customRuns.map(r => r.length)
+        : sideLengths.slice(0, sidesCount);
       if (shape === 'custom') {
         // Dev trace – remove or gate behind env flag later
         // eslint-disable-next-line no-console
@@ -313,7 +387,7 @@ export default function LayoutForm() {
           <CustomShapeDesigner onChange={(runs)=> setCustomRuns(runs)} />
         </div>
       )}
-  <form onSubmit={handleCalculate} className="grid grid-cols-1 gap-6 md:grid-cols-2">
+  <form ref={formRef} onSubmit={handleCalculate} className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {Array.from({ length: sidesCount }).map((_, i) => (
           <FieldGroup key={i}>
             <label className="text-xs font-medium text-slate-500">
@@ -322,7 +396,8 @@ export default function LayoutForm() {
             <input
               type="number"
               inputMode="numeric"
-              min={0}
+              min={2000}
+              required
       value={sideLengths[i] || ''}
       onChange={(e)=>handleSideChange(i, e.target.value)}
               onFocus={() => setFocusedSide(i)}
@@ -352,6 +427,7 @@ export default function LayoutForm() {
           <select
             disabled={!optionSets}
             value={fixingType || ''}
+            required
             onChange={(e)=> setFixingType(e.target.value || undefined)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
@@ -398,7 +474,7 @@ export default function LayoutForm() {
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100"
           >
             {!optionSets && <option>—</option>}
-            {optionSets?.glassThicknesses.map((t) => (
+            {filteredGlassThicknesses.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
@@ -412,7 +488,7 @@ export default function LayoutForm() {
             className={`rounded-lg border bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 disabled:cursor-not-allowed disabled:bg-slate-100 ${handrailError ? 'border-red-400' : 'border-slate-300'}`}
           >
             {showNoHandrailOption && <option value="none">No Handrail</option>}
-            {optionSets?.handrails.map((h) => (
+            {filteredHandrails.map((h) => (
               <option key={h.value} value={h.value}>{h.label}</option>
             ))}
           </select>
@@ -423,7 +499,7 @@ export default function LayoutForm() {
             <p className="mt-1 text-[11px] text-slate-500">Sentry glass selected – handrail not required.</p>
           )}
           {fenceCategory === 'pool' && (
-            <p className="mt-1 text-[11px] text-slate-500">Pool fence – handrail optional.</p>
+            <p className="mt-1 text-[11px] text-slate-500">Pool fence – handrail not used.</p>
           )}
         </FieldGroup>
         <FieldGroup>
@@ -454,19 +530,21 @@ export default function LayoutForm() {
           </select>
         </FieldGroup>
 
-        {/* Gap Size */}
-        <FieldGroup>
-          <label className="text-xs font-medium text-slate-500">Gap size (mm)</label>
-          <select
-            value={gapSize}
-            onChange={(e) => setGapSize(Number(e.target.value))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
-          >
-            {gapOptions.map((g) => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-        </FieldGroup>
+        {/* Gap Size (hidden in stock mode; auto-selected by solver) */}
+        {glassMode === 'standard' && (
+          <FieldGroup>
+            <label className="text-xs font-medium text-slate-500">Gap size (mm)</label>
+            <select
+              value={gapSize}
+              onChange={(e) => setGapSize(Number(e.target.value))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+            >
+              {gapOptions.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </FieldGroup>
+        )}
 
         {/* Allow Mixed Sizes - only in stock mode */}
         {glassMode === 'stock' && (
@@ -511,16 +589,26 @@ export default function LayoutForm() {
         )}
         
         <div className="md:col-span-2">
-          {(() => {
-            const hasStandard = sideLengths.slice(0, sidesCount).some(v=>v>0);
-            const hasCustom = shape === 'custom' && customRuns.some(r=>r.length > 0);
-            const disabled = shape === 'custom' ? !hasCustom : !hasStandard;
-            return (
-              <Button type="submit" className="mt-4 w-full" disabled={disabled}>
-                Calculate compliant layout
-              </Button>
-            );
-          })()}
+          <Button
+            type="submit"
+            className="mt-4 w-full"
+            onClick={() => {
+              const form = formRef.current;
+              if (!form) return;
+              // Trigger native tooltip and show a small warning below when invalid
+              if (!form.checkValidity()) {
+                form.reportValidity();
+                setFormWarning('Please complete all required fields.');
+              } else {
+                setFormWarning('');
+              }
+            }}
+          >
+            Calculate compliant layout
+          </Button>
+          {formWarning && (
+            <p className="mt-2 text-[11px] font-medium text-red-600">{formWarning}</p>
+          )}
         </div>
       </form>
       {hasResult && (
