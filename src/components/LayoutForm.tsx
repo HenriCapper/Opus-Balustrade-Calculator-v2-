@@ -3,6 +3,8 @@ import Button from "@/components/ui/Button";
 import { useMemo, useState, useEffect } from "react";
 import { useLayoutStore } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
+import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
+import { lookupChannelPs1 } from "@/data/channelPs1";
 import { solveSymmetric, aggregatePanels } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
 import CustomShapeDesigner from "@/components/CustomShapeDesigner";
@@ -192,8 +194,27 @@ export default function LayoutForm() {
       ? customRuns.map(r => r.length).filter(v=>v>0)
       : sideLengths.slice(0, sidesCount).filter(v => v > 0);
     if (!usedSides.length) return; // no lengths entered yet
-    // Lookup PS1 row for spigot systems (currently implementing for sp10/12/13 only)
-    const ps1 = lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
+    // Lookup PS1 row (spigots vs standoffs vs channels)
+    const isStandoffs = calcKey === 'sd50' || calcKey === 'pf150' || calcKey === 'sd100' || calcKey === 'pradis';
+    const isChannel = calcKey === 'smartlock_top' || calcKey === 'smartlock_side' || calcKey === 'lugano' || calcKey === 'vista';
+    const ps1 = isStandoffs
+      ? lookupStandoffsPs1(
+          calcKey,
+          fenceType,
+          glassThickness,
+          glassHeight,
+          windZone || undefined,
+          fixingType,
+        )
+      : isChannel
+        ? lookupChannelPs1(
+            calcKey,
+            fenceType,
+            glassThickness,
+            glassHeight,
+            windZone || undefined,
+          )
+        : lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
     const totalRun = usedSides.reduce((a,b)=>a+b,0);
   let estimatedSpigots: number | undefined;
   let estimatedPanels: number | undefined;
