@@ -24,7 +24,7 @@ export default function SceneCanvas({ children }: SceneCanvasProps) {
           {children}
           <Grid args={[500, 500]} cellColor="#dbe2ea" sectionColor="#94a3b8" />
           <OrbitControls makeDefault enablePan enableRotate enableZoom />
-          <Environment files={"/src/assets/threejs/citrus_orchard_road_puresky_4k.hdr"} background={true} />
+          <Environment files={"/citrus_orchard_road_puresky_4k.hdr"} background={true} />
         </Suspense>
       </Canvas>
     </div>

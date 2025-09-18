@@ -64,7 +64,7 @@ Type-aware rules configured via `tsconfig.app.json` & `tsconfig.node.json`. Exte
 
 ### Environment / Assets
 
-HDR environment: `src/assets/threejs/citrus_orchard_road_puresky_4k.hdr`. Replace or add more HDRIs as required.
+HDR environment: `/citrus_orchard_road_puresky_4k.hdr`. Replace or add more HDRIs as required.
 
 ---
 
