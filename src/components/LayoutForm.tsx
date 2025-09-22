@@ -11,7 +11,7 @@ import CustomShapeDesigner from "@/components/CustomShapeDesigner";
 import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions";
 import FieldGroup from "@/components/ui/FieldGroup";
 import CompliantLayout from "@/components/CompliantLayout";
-
+import SideVisuals from "@/components/SideVisuals";
 export default function LayoutForm() {
   const clear = useSelectionStore((s) => s.clearSelected);
   const shape = useSelectionStore((s) => s.selected);
@@ -614,6 +614,7 @@ export default function LayoutForm() {
       {hasResult && (
         <div className="mt-8">
           <CompliantLayout />
+          <SideVisuals />
         </div>
       )}
     </div>
