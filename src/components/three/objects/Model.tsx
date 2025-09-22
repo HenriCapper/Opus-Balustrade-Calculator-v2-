@@ -72,3 +72,11 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
 
 // Preload a common default spigot if present (public path)
 useGLTF.preload('/models/spigots/SP12.glb');
+useGLTF.preload('/models/spigots/SP13.glb');
+useGLTF.preload('/models/spigots/SP14.glb');
+useGLTF.preload('/models/spigots/SP15.glb');
+useGLTF.preload('/models/spigots/RMP160.glb');
+useGLTF.preload('/models/spigots/SMP160.glb');
+
+
+

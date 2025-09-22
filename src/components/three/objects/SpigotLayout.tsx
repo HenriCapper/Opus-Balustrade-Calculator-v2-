@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { Model } from "./Model";
 import { Text } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
+import { GROUND_Y_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
 
 // Billboard text component
 function FacingText({
@@ -95,6 +96,7 @@ function computeSpigotsForPanel(
 export function SpigotLayout(props: ComponentProps<"group">) {
   const input = useLayoutStore((s) => s.input);
   const result = useLayoutStore((s) => s.result);
+  const codeUpper = getModelCodeUpper(input?.calcKey);
 
   const data = useMemo(() => {
     if (!input || !result) return null;
@@ -209,14 +211,19 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   return (
     <group {...props}>
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        receiveShadow
-        position={[0, -0.001, 0]}
-      >
-        <planeGeometry args={[500, 500]} />
-        <meshStandardMaterial color="#ffffff" />
-      </mesh>
+       {(() => {
+        const planeY = mmToMeters(GROUND_Y_OFFSETS_MM[codeUpper] ?? -1);
+        return (
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow
+            position={[0, planeY, 0]}
+          >
+            <planeGeometry args={[500, 500]} />
+            <meshStandardMaterial color="#ffffff" />
+          </mesh>
+        );
+      })()}
       {panelMeshes.map((p, i) => {
         const scale = 0.001;
         const mid = p.mid.clone().multiplyScalar(scale);
@@ -274,12 +281,13 @@ export function SpigotLayout(props: ComponentProps<"group">) {
         })()}
       {spigots.map((s, i) => {
         const scale = 0.001;
+        const y = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
         return (
           <Model
             key={i}
             kind="spigot"
-            code={input?.calcKey || "sp12"}
-            position={[s.position.x * scale, 0, s.position.z * scale]}
+            code={codeUpper}
+            position={[s.position.x * scale, y, s.position.z * scale]}
             scale={0.65}
             quaternion={s.quat}
           />
