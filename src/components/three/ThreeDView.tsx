@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLayoutStore } from '@/store/useLayoutStore';
+import { CALC_OPTION_MAP, type CalcKey } from '@/data/calcOptions';
 import SceneCanvas from './SceneCanvas';
 import { SpigotLayout } from './objects/SpigotLayout';
 
@@ -12,6 +13,10 @@ export default function ThreeDView() {
   const result = useLayoutStore(s => s.result);
   const setLayout = useLayoutStore(s=>s.setLayout);
   const [localSpigotsMode, setLocalSpigotsMode] = useState<'auto'|'2'|'3'|null>(null);
+  const finishes = useMemo(() => {
+    const key = input?.calcKey as CalcKey | undefined;
+    return key ? (CALC_OPTION_MAP[key]?.finishes || []) : [];
+  }, [input?.calcKey]);
 
   // If user refreshed or hit URL directly without prior calculation, redirect back
   useEffect(() => {
@@ -34,6 +39,11 @@ export default function ThreeDView() {
     // Update only spigotsPerPanel and re-store same result (geometry recomputed in 3D from mode)
     setLayout({ ...input, spigotsPerPanel: mode }, { ...result });
     setLocalSpigotsMode(mode);
+  }
+
+  function applyFinish(next: string){
+    if(!input || !result) return;
+    setLayout({ ...input, finish: next }, { ...result });
   }
 
   return (
@@ -80,6 +90,20 @@ export default function ThreeDView() {
                   >{m}</button>
                 ))}
               </div>
+            </div>
+          )}
+          {finishes.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-1 font-medium text-slate-600">Hardware finish</p>
+              <select
+                value={input?.finish ?? finishes[0]}
+                onChange={(e)=>applyFinish(e.target.value)}
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50"
+              >
+                {finishes.map(f => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
             </div>
           )}
           <div className="mt-4 text-[10px] text-slate-500">3D view is indicative only. Dimensions shown reflect calculated spacing.</div>
