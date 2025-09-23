@@ -42,8 +42,28 @@ function FacingText({
 // Base panel geometry (box to show thickness)
 const basePanelGeom = new THREE.BoxGeometry(1, 1, 1);
 
-function buildSegments(lengths: number[], customVectors?: { dx: number; dy: number; length: number }[]) {
-  const segs: { start: THREE.Vector3; end: THREE.Vector3; length: number; dir: THREE.Vector3; index: number; }[] = [];
+// Types used within this module
+interface Segment {
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  length: number;
+  dir: THREE.Vector3;
+  index: number;
+}
+
+interface PanelMesh {
+  mid: THREE.Vector3;
+  dir: THREE.Vector3;
+  width: number;
+  height: number;
+  seg: Segment;
+  spigotOffsets: number[];
+}
+
+type SpigotItem = { position: THREE.Vector3; segIndex: number; quat: THREE.Quaternion };
+
+function buildSegments(lengths: number[], customVectors?: { dx: number; dy: number; length: number }[]): Segment[] {
+  const segs: Segment[] = [];
   let cursor = new THREE.Vector3();
   if (customVectors && customVectors.length === lengths.length) {
     customVectors.forEach((v, i) => {
@@ -98,7 +118,12 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const result = useLayoutStore((s) => s.result);
   const codeUpper = getModelCodeUpper(input?.calcKey);
 
-  const data = useMemo(() => {
+  const data = useMemo<{
+    panelMeshes: PanelMesh[];
+    spigots: SpigotItem[];
+    segments: Segment[];
+    glassHeight: number;
+  } | null>(() => {
     if (!input || !result) return null;
   const { sideLengths, glassHeight = 1100, customVectors } = input as any;
     if (!sideLengths || !sideLengths.length) return null;
@@ -109,14 +134,6 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
 
     const layouts = result.sidePanelLayouts;
-    type PanelMesh = {
-      mid: THREE.Vector3;
-      dir: THREE.Vector3;
-      width: number;
-      height: number;
-      seg: any;
-      spigotOffsets: number[];
-    };
     const panelMeshes: PanelMesh[] = [];
     if (layouts && layouts.length) {
       layouts.forEach((layout, i) => {
@@ -168,8 +185,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
       });
     }
 
-    const spigots = panelMeshes.flatMap((panel) =>
-      panel.spigotOffsets.map((off) => {
+    const spigots: SpigotItem[] = panelMeshes.flatMap((panel) =>
+      panel.spigotOffsets.map((off): SpigotItem => {
         const position = panel.seg.start
           .clone()
           .add(panel.dir.clone().multiplyScalar(off));
@@ -185,7 +202,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
       })
     );
 
-    return { panelMeshes, spigots };
+    return { panelMeshes, spigots, segments, glassHeight };
   }, [input, result]);
 
   if (!data) return null;
@@ -195,11 +212,11 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     return isNaN(n) ? 12 : n;
   })();
   const thicknessM = glassThicknessMm * 0.001;
-  const { panelMeshes, spigots } = data;
+  const { panelMeshes, spigots, segments } = data;
 
   // Compute dynamic ground plane size (optional visual aid for custom shapes)
   const bounds = new THREE.Box3();
-  panelMeshes.forEach(p => {
+  panelMeshes.forEach((p: PanelMesh) => {
     bounds.expandByPoint(p.mid.clone());
   });
   const size = new THREE.Vector3();
@@ -211,6 +228,37 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   return (
     <group {...props}>
+      {codeUpper === 'SP13' && segments && segments.length > 0 && (
+        // For SP13 (wall-fixed), draw a vertical wall plane behind each side with width equal to the side length
+        <group>
+          {segments.map((seg: Segment, i: number) => {
+            const scale = 0.001;
+            const mid = seg.start.clone().add(seg.end).multiplyScalar(0.5 * scale);
+            const dirUnit = seg.dir.clone().normalize();
+            const normal = new THREE.Vector3(dirUnit.z, 0, -dirUnit.x).normalize();
+            const quat = new THREE.Quaternion().setFromUnitVectors(
+              new THREE.Vector3(0, 0, 1),
+              normal
+            );
+            const widthM = Math.max(0.001, seg.length * scale);
+            const wallThicknessM = 0.1; // 20mm wall thickness; tweak as needed
+            const wallOffsetM = 0.058; // place slightly behind spigots (~40mm)
+            // Offset the wall backwards so spigots appear in front of it
+            const pos = mid.clone().add(normal.clone().multiplyScalar(-wallOffsetM));
+            return (
+              <mesh
+                key={`wall-${i}`}
+                position={[pos.x, -0.2865, pos.z]}
+                quaternion={quat}
+                receiveShadow
+              >
+                <boxGeometry args={[widthM, 0.5, wallThicknessM]} />
+                <meshStandardMaterial color="#e5e7eb" side={THREE.DoubleSide} />
+              </mesh>
+            );
+          })}
+        </group>
+      )}
        {(() => {
         const planeY = mmToMeters(GROUND_Y_OFFSETS_MM[codeUpper] ?? -1);
         return (
@@ -224,7 +272,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
           </mesh>
         );
       })()}
-      {panelMeshes.map((p, i) => {
+      {panelMeshes.map((p: PanelMesh, i: number) => {
         const scale = 0.001;
         const mid = p.mid.clone().multiplyScalar(scale);
         const widthM = p.width * scale;
@@ -279,7 +327,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             >{`${p.height} mm glass height`}</FacingText>
           );
         })()}
-      {spigots.map((s, i) => {
+      {spigots.map((s: SpigotItem, i: number) => {
         const scale = 0.001;
         const y = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
         return (
