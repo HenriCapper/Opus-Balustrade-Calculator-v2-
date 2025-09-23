@@ -3,6 +3,7 @@ import { Environment, OrbitControls, Grid, PerspectiveCamera } from '@react-thre
 import { Suspense, useMemo } from 'react';
 import { useLayoutStore } from '@/store/useLayoutStore';
 import { GROUND_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from './config/offsets';
+import * as THREE from 'three';
 
 type SceneCanvasProps = {
   children: React.ReactNode;
@@ -16,7 +17,21 @@ export default function SceneCanvas({ children }: SceneCanvasProps) {
   }, [input?.calcKey]);
   return (
     <div className="h-full w-full">
-      <Canvas shadows dpr={[1, 2]}>
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        gl={{
+          antialias: true,
+          powerPreference: 'high-performance',
+          toneMapping: THREE.ACESFilmicToneMapping,
+          outputColorSpace: THREE.SRGBColorSpace,
+        }}
+        onCreated={({ gl }) => {
+          // Use softer shadow filtering for better realism
+          gl.shadowMap.enabled = true;
+          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+        }}
+      >
         <Suspense fallback={null}>
           <color attach="background" args={["#f3f6fa"]} />
           <ambientLight intensity={0.6} />
