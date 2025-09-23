@@ -3,9 +3,14 @@ import type { ComponentProps } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Model } from "./Model";
-import { Text } from "@react-three/drei";
+import { Text, useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { GROUND_Y_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
+
+// Preload wall texture set to minimize pop-in when switching to SP13
+useTexture.preload('/textures/Wall/BaseColor.png');
+useTexture.preload('/textures/Wall/Normal.png');
+useTexture.preload('/textures/Wall/Roughness.png');
 
 // Billboard text component
 function FacingText({
@@ -117,6 +122,31 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const input = useLayoutStore((s) => s.input);
   const result = useLayoutStore((s) => s.result);
   const codeUpper = getModelCodeUpper(input?.calcKey);
+
+  // Preload wall texture set (used for SP13 wall rendering)
+  const wallMaps = useTexture(
+    {
+      map: "/textures/Wall/BaseColor.png",
+      normalMap: "/textures/Wall/Normal.png",
+      roughnessMap: "/textures/Wall/Roughness.png",
+      // displacementMap can be loaded, but BoxGeometry won't show much without subdivisions
+      // displacementMap: "/textures/Wall/Displacement.png",
+    }
+  ) as any;
+  // Configure base sampling only once
+  if (wallMaps?.map) {
+    wallMaps.map.colorSpace = THREE.SRGBColorSpace;
+    wallMaps.map.wrapS = wallMaps.map.wrapT = THREE.RepeatWrapping;
+    wallMaps.map.anisotropy = Math.max(wallMaps.map.anisotropy || 0, 8);
+  }
+  if (wallMaps?.normalMap) {
+    wallMaps.normalMap.wrapS = wallMaps.normalMap.wrapT = THREE.RepeatWrapping;
+    wallMaps.normalMap.anisotropy = Math.max(wallMaps.normalMap.anisotropy || 0, 8);
+  }
+  if (wallMaps?.roughnessMap) {
+    wallMaps.roughnessMap.wrapS = wallMaps.roughnessMap.wrapT = THREE.RepeatWrapping;
+    wallMaps.roughnessMap.anisotropy = Math.max(wallMaps.roughnessMap.anisotropy || 0, 8);
+  }
 
   const data = useMemo<{
     panelMeshes: PanelMesh[];
@@ -241,10 +271,34 @@ export function SpigotLayout(props: ComponentProps<"group">) {
               normal
             );
             const widthM = Math.max(0.001, seg.length * scale);
-            const wallThicknessM = 0.1; // 20mm wall thickness; tweak as needed
+            const wallThicknessM = 0.1; // ~100mm wall thickness; tweak as needed
             const wallOffsetM = 0.058; // place slightly behind spigots (~40mm)
             // Offset the wall backwards so spigots appear in front of it
             const pos = mid.clone().add(normal.clone().multiplyScalar(-wallOffsetM));
+
+            // Prepare per-segment texture tiling (clone to avoid sharing repeat across segments)
+            const tileSizeM = 0.5; // physical tile size for texture repeat (0.5m square)
+            const repeatX = Math.max(1, Math.round(widthM / tileSizeM));
+            const repeatY = Math.max(1, Math.round(0.5 / tileSizeM));
+            const map = wallMaps?.map?.clone?.() ?? null;
+            const nrm = wallMaps?.normalMap?.clone?.() ?? null;
+            const rough = wallMaps?.roughnessMap?.clone?.() ?? null;
+            if (map) {
+              map.wrapS = map.wrapT = THREE.RepeatWrapping;
+              map.repeat.set(repeatX, repeatY);
+              map.anisotropy = Math.max(map.anisotropy || 0, 8);
+              // keep SRGB for baseColor
+            }
+            if (nrm) {
+              nrm.wrapS = nrm.wrapT = THREE.RepeatWrapping;
+              nrm.repeat.set(repeatX, repeatY);
+              nrm.anisotropy = Math.max(nrm.anisotropy || 0, 8);
+            }
+            if (rough) {
+              rough.wrapS = rough.wrapT = THREE.RepeatWrapping;
+              rough.repeat.set(repeatX, repeatY);
+              rough.anisotropy = Math.max(rough.anisotropy || 0, 8);
+            }
             return (
               <mesh
                 key={`wall-${i}`}
@@ -253,7 +307,18 @@ export function SpigotLayout(props: ComponentProps<"group">) {
                 receiveShadow
               >
                 <boxGeometry args={[widthM, 0.5, wallThicknessM]} />
-                <meshStandardMaterial color="#e5e7eb" side={THREE.DoubleSide} />
+                {/* wall texture here */}
+                <meshStandardMaterial
+                  side={THREE.DoubleSide}
+                  // Non-metallic painted/plastered wall
+                  metalness={0.0}
+                  roughness={0.9}
+                  envMapIntensity={0.15}
+                  map={map as any}
+                  normalMap={nrm as any}
+                  roughnessMap={rough as any}
+                  normalScale={new THREE.Vector2(0.6, 0.6)}
+                />
               </mesh>
             );
           })}
