@@ -8,6 +8,25 @@ export default function CompliantLayout(){
   const navigate = useNavigate();
   if(!input || !result) return null;
   const { ps1 } = result;
+  // Derive dynamic overrides when user forces spigots per panel ("2" or "3") after calculation
+  let panelsSummary = result.panelsSummary;
+  let totalSpigots = result.totalSpigots;
+  if (input.system === 'spigots' && result.allPanels && result.allPanels.length && input.spigotsPerPanel && input.spigotsPerPanel !== 'auto') {
+    const forced = parseInt(input.spigotsPerPanel, 10);
+    if (!isNaN(forced)) {
+      const groups: Record<string,{count:number;width:number;}> = {};
+      result.allPanels.forEach(w => {
+        const key = w.toFixed(2);
+        if(!groups[key]) groups[key] = { count:0, width:w };
+        groups[key].count++;
+      });
+      panelsSummary = Object.values(groups)
+        .sort((a,b)=> b.width - a.width)
+        .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${forced} spigots each)`) // mimic legacy formatting
+        .join('<br>');
+      totalSpigots = forced * result.allPanels.length;
+    }
+  }
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-700">Compliant Layout (beta)</h3>
@@ -22,16 +41,16 @@ export default function CompliantLayout(){
               <th className="bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Sides</th>
               <td className="px-3 py-2">{result.sideRuns.map(r=> `${r}mm`).join(' + ')}</td>
             </tr>
-            {result.panelsSummary && (
+            {panelsSummary && (
               <tr className="border-b align-top">
                 <th className="bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Panels</th>
-                <td className="px-3 py-2" dangerouslySetInnerHTML={{__html: result.panelsSummary}} />
+                <td className="px-3 py-2" dangerouslySetInnerHTML={{__html: panelsSummary}} />
               </tr>
             )}
-            {typeof result.totalSpigots === 'number' && (
+            {typeof totalSpigots === 'number' && (
               <tr className="border-b">
                 <th className="bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Spigots</th>
-                <td className="px-3 py-2">{result.totalSpigots}</td>
+                <td className="px-3 py-2">{totalSpigots}</td>
               </tr>
             )}
             {ps1 && (

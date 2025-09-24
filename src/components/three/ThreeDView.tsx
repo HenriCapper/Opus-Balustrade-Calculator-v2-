@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLayoutStore } from '@/store/useLayoutStore';
 import { CALC_OPTION_MAP, type CalcKey } from '@/data/calcOptions';
@@ -13,6 +13,25 @@ export default function ThreeDView() {
   const result = useLayoutStore(s => s.result);
   const setLayout = useLayoutStore(s=>s.setLayout);
   const [localSpigotsMode, setLocalSpigotsMode] = useState<'auto'|'2'|'3'|null>(null);
+  // Preserve the original (auto) panels summary + totals so we can restore when user toggles back to 'auto'
+  const originalPanelsRef = useRef<{ summary?: string; totalSpigots?: number; estimatedSpigots?: number } | null>(null);
+
+  // Capture original result once (or when a brand new calculation arrives)
+  useEffect(() => {
+    if (result) {
+      // If the underlying calculation changed (different hash of panel widths), reset original reference
+      const key = (result.allPanels || []).join('|');
+      // Store key inside the ref object to detect changes
+      if (!originalPanelsRef.current || (originalPanelsRef.current as any)._key !== key) {
+        originalPanelsRef.current = {
+          summary: result.panelsSummary,
+          totalSpigots: result.totalSpigots,
+          estimatedSpigots: result.estimatedSpigots,
+          _key: key as any,
+        } as any;
+      }
+    }
+  }, [result]);
   const finishes = useMemo(() => {
     const key = input?.calcKey as CalcKey | undefined;
     return key ? (CALC_OPTION_MAP[key]?.finishes || []) : [];
@@ -36,8 +55,42 @@ export default function ThreeDView() {
 
   function applySpigotsMode(mode: 'auto'|'2'|'3'){
     if(!input || !result) return;
-    // Update only spigotsPerPanel and re-store same result (geometry recomputed in 3D from mode)
-    setLayout({ ...input, spigotsPerPanel: mode }, { ...result });
+    let nextResult = { ...result };
+    if (mode === 'auto') {
+      // Restore original auto-calculated summary if available
+      if (originalPanelsRef.current) {
+        nextResult = {
+          ...nextResult,
+          panelsSummary: originalPanelsRef.current.summary,
+          totalSpigots: originalPanelsRef.current.totalSpigots,
+          estimatedSpigots: originalPanelsRef.current.estimatedSpigots,
+        };
+      }
+    } else {
+      const forced = parseInt(mode, 10);
+      if (result.allPanels && result.allPanels.length) {
+        // Re-group by width (to two decimals) replicating aggregatePanels ordering
+        const groups: Record<string,{count:number;width:number;}> = {};
+        result.allPanels.forEach(w => {
+          const key = w.toFixed(2);
+          if(!groups[key]) groups[key] = { count:0, width:w };
+          groups[key].count++;
+        });
+        const summary = Object.values(groups)
+          .sort((a,b)=> b.width - a.width)
+          .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${forced} spigots each)`)
+          .join('<br>');
+        const totalPanels = result.allPanels.length;
+        nextResult = {
+          ...nextResult,
+            panelsSummary: summary,
+            totalSpigots: forced * totalPanels,
+            estimatedSpigots: forced * totalPanels,
+        };
+      }
+    }
+    // Persist updated input & derived result
+    setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
     setLocalSpigotsMode(mode);
   }
 
