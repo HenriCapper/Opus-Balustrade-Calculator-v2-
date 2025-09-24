@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls, Grid, PerspectiveCamera } from '@react-three/drei';
-import { Suspense, useMemo } from 'react';
+import { Environment, OrbitControls, Grid, PerspectiveCamera, useProgress } from '@react-three/drei';
+import { Suspense, useMemo, useEffect, useState } from 'react';
 import { useLayoutStore } from '@/store/useLayoutStore';
 import { GROUND_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from './config/offsets';
 import * as THREE from 'three';
@@ -9,6 +9,40 @@ type SceneCanvasProps = {
   children: React.ReactNode;
 };
 
+// Lightweight top loading bar driven by drei's asset loader
+function CenterLoader() {
+  const { progress, active } = useProgress();
+  const [visible, setVisible] = useState(false);
+  const [internalProgress, setInternalProgress] = useState(0);
+
+  useEffect(() => {
+    setVisible(true);
+    setInternalProgress(progress);
+  }, [progress]);
+
+  useEffect(() => {
+    if (!active && progress >= 100) {
+      const t = setTimeout(() => setVisible(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [active, progress]);
+
+  if (!visible) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-48 h-2 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-sky-500 transition-[width] duration-300"
+            style={{ width: `${Math.min(100, internalProgress)}%` }}
+          />
+        </div>
+        <span className="text-xs font-medium text-slate-700 drop-shadow-sm">{Math.round(internalProgress)}%</span>
+      </div>
+    </div>
+  );
+}
+
 export default function SceneCanvas({ children }: SceneCanvasProps) {
   const input = useLayoutStore((s) => s.input);
   const gridY = useMemo(() => {
@@ -16,7 +50,8 @@ export default function SceneCanvas({ children }: SceneCanvasProps) {
     return mmToMeters(GROUND_Y_OFFSETS_MM[code] ?? -1);
   }, [input?.calcKey]);
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full relative">
+      <CenterLoader />
       <Canvas
         shadows
         dpr={[1, 2]}
