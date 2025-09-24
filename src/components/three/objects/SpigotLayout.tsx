@@ -3,7 +3,8 @@ import type { ComponentProps } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Model } from "./Model";
-import { Text, useTexture, MeshTransmissionMaterial } from "@react-three/drei";
+import { Text, useTexture } from "@react-three/drei";
+import { LightGlassMaterial } from "../materials/LightGlassMaterial";
 import { useFrame, useThree } from "@react-three/fiber";
 import { GROUND_Y_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
 
@@ -357,19 +358,12 @@ export function SpigotLayout(props: ComponentProps<"group">) {
               scale={[widthM, heightM, thicknessM]}
               castShadow
             >
-              <MeshTransmissionMaterial
-                // Realistic glass tuned to reduce blur/shimmer
-                samples={16}
-                resolution={2024}
-                transmission={1}
-                roughness={0.02}
-                thickness={Math.max(0.004, thicknessM)}
+              {/* Lightweight custom GLSL glass (memory-friendly vs MeshTransmissionMaterial) */}
+              <LightGlassMaterial
+                color="#93c5fd"
+                opacity={0.08}
                 ior={1.5}
-                chromaticAberration={0.002}
-                attenuationDistance={1.2}
-                attenuationColor="#93c5fd"
-                backside
-                side={THREE.DoubleSide}
+                fresnelPower={4.0}
               />
             </mesh>
             <FacingText
