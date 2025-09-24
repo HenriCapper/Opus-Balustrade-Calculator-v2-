@@ -57,6 +57,24 @@ function snapAngle(from: Pt, to: Pt): Pt {
   return { x: from.x + dist * Math.cos(rad), y: from.y + dist * Math.sin(rad) };
 }
 
+// Legacy style internal angle calculation (returns 0–180, snapped to ANGLE_SNAP)
+function internalAngle(prev: Pt, current: Pt, next: Pt): number {
+  // Vectors: current from prev, next from current
+  const v1x = current.x - prev.x;
+  const v1y = current.y - prev.y;
+  const v2x = next.x - current.x;
+  const v2y = next.y - current.y;
+  const dot = v1x * v2x + v1y * v2y;
+  const cross = v1x * v2y - v1y * v2x;
+  let angle = Math.atan2(cross, dot) * (180 / Math.PI);
+  if (angle < 0) angle += 360;
+  angle = 180 - angle; // supplementary so straight line shows 180
+  if (angle < 0) angle += 360;
+  if (angle > 180) angle = 360 - angle; // keep <= 180
+  const snapped = Math.round(angle / ANGLE_SNAP) * ANGLE_SNAP;
+  return snapped;
+}
+
 export default function CustomShapeDesigner({ value, onChange, className, height = 420 }: CustomShapeDesignerProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [points, setPoints] = useState<Pt[]>(() => []);
@@ -204,33 +222,105 @@ export default function CustomShapeDesigner({ value, onChange, className, height
           </defs>
           <rect x={-10000} y={-10000} width={20000} height={20000} fill="url(#grid)" />
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-            {/* drawn lines */}
+            {/* drawn lines and length labels */}
             {points.map((p, i) => {
               if (i === 0) return null;
               const a = points[i-1];
               const b = p;
-              return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
-            })}
-            {/* ghost line */}
-            {ghost && points.length > 0 && (
-              <line x1={points[points.length-1].x} y1={points[points.length-1].y} x2={ghost.x} y2={ghost.y} stroke="#0369a1" strokeDasharray="6 6" strokeWidth={2} />
-            )}
-            {/* points */}
-            {points.map((p,i)=>(
-              <g key={`pt-${i}`}>
-                <circle cx={p.x} cy={p.y} r={7} fill="#0284c7" stroke="#fff" strokeWidth={2} />
-                <text x={p.x+12} y={p.y-12} fontSize={14} fontFamily="system-ui, sans-serif" fill="#0369a1" fontWeight={600}>{String.fromCharCode(65+i)}</text>
-              </g>
-            ))}
-            {/* ghost measurement label */}
-            {ghost && points.length>0 && (()=>{
-              const a = points[points.length-1];
-              const b = ghost; 
-              const dx = b.x - a.x; const dy = b.y - a.y;
+              // Calculate length in mm
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
               const { lenMm } = snapLength(dx, dy);
-              const mx = (a.x + b.x)/2; const my = (a.y + b.y)/2;
-              return <text x={mx} y={my-10} textAnchor="middle" fontSize={14} fill="#0369a1" fontFamily="system-ui">{lenMm} mm</text>
+              // Midpoint for label
+              const mx = (a.x + b.x) / 2;
+              const my = (a.y + b.y) / 2;
+              // Offset label a bit above the line
+              const labelOffset = 14;
+              const angle = Math.atan2(dy, dx);
+              const lx = mx + labelOffset * Math.sin(angle);
+              const ly = my - labelOffset * Math.cos(angle);
+              return (
+                <g key={i}>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
+                  <text x={lx} y={ly} textAnchor="middle" fontSize={14} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{lenMm} mm</text>
+                </g>
+              );
+            })}
+
+            {/* ghost line, length label & live angle arc */}
+            {ghost && points.length > 0 && (() => {
+              const prev = points[points.length-1];
+              const b = ghost;
+              const dx = b.x - prev.x; const dy = b.y - prev.y;
+              const { lenMm } = snapLength(dx, dy);
+              const mx = (prev.x + b.x)/2; const my = (prev.y + b.y)/2;
+              const labelOffset = 14;
+              const angLine = Math.atan2(dy, dx);
+              const lx = mx + labelOffset * Math.sin(angLine);
+              const ly = my - labelOffset * Math.cos(angLine);
+
+              // Angle arc only if at least 2 fixed points (we need a previous segment)
+              let arcEl: React.ReactNode = null;
+              let angleLabel: React.ReactNode = null;
+              if (points.length >= 2) {
+                const prevPrev = points[points.length - 2];
+                const anchor = prev; // vertex point
+                const angleDeg = internalAngle(prevPrev, anchor, b);
+                // Geometry for arc similar to legacy
+                const radius = 45; // svg units
+                const startAngle = Math.atan2(prevPrev.y - anchor.y, prevPrev.x - anchor.x);
+                const endAngle = Math.atan2(b.y - anchor.y, b.x - anchor.x);
+                let diff = endAngle - startAngle;
+                if (diff > Math.PI) diff -= 2 * Math.PI;
+                if (diff < -Math.PI) diff += 2 * Math.PI;
+                const sweepFlag = diff > 0 ? 1 : 0;
+                const largeArcFlag = Math.abs(diff) > Math.PI ? 1 : 0;
+                const sx = anchor.x + radius * Math.cos(startAngle);
+                const sy = anchor.y + radius * Math.sin(startAngle);
+                const ex = anchor.x + radius * Math.cos(endAngle);
+                const ey = anchor.y + radius * Math.sin(endAngle);
+                const pathD = `M ${sx} ${sy} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${ex} ${ey}`;
+                arcEl = <path d={pathD} stroke="#0369a1" strokeWidth={2} fill="none" strokeDasharray="4 3" />;
+                const midAngle = startAngle + diff / 2;
+                const labelR = radius + 18;
+                const ax = anchor.x + labelR * Math.cos(midAngle);
+                const ay = anchor.y + labelR * Math.sin(midAngle) + 4;
+                angleLabel = <text x={ax} y={ay} fontSize={14} fontFamily="system-ui" fontWeight={600} fill="#0369a1" textAnchor="middle">{angleDeg}&deg;</text>;
+              }
+
+              return (
+                <>
+                  <line x1={prev.x} y1={prev.y} x2={b.x} y2={b.y} stroke="#0369a1" strokeDasharray="6 6" strokeWidth={2} />
+                  <text x={lx} y={ly} textAnchor="middle" fontSize={14} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{lenMm} mm</text>
+                  {arcEl}
+                  {angleLabel}
+                </>
+              );
             })()}
+
+            {/* points and angle labels */}
+            {points.map((p, i) => {
+              const elements = [
+                <circle key={`c${i}`} cx={p.x} cy={p.y} r={7} fill="#0284c7" stroke="#fff" strokeWidth={2} />,
+                <text key={`t${i}`} x={p.x+12} y={p.y-12} fontSize={14} fontFamily="system-ui, sans-serif" fill="#0369a1" fontWeight={600}>{String.fromCharCode(65+i)}</text>
+              ];
+              if (i > 0 && i < points.length - 1) {
+                const ang = internalAngle(points[i-1], p, points[i+1]);
+                // Find an outward direction by averaging normalized reversed vectors (like legacy)
+                const v1x = points[i-1].x - p.x; const v1y = points[i-1].y - p.y;
+                const v2x = points[i+1].x - p.x; const v2y = points[i+1].y - p.y;
+                const m1 = Math.sqrt(v1x*v1x + v1y*v1y) || 1;
+                const m2 = Math.sqrt(v2x*v2x + v2y*v2y) || 1;
+                const bx = v1x/m1 + v2x/m2;
+                const by = v1y/m1 + v2y/m2;
+                const bm = Math.sqrt(bx*bx + by*by) || 1;
+                const offset = 34;
+                const labelX = p.x + (bx/bm)*offset;
+                const labelY = p.y + (by/bm)*offset;
+                elements.push(<text key={`angle${i}`} x={labelX} y={labelY} fontSize={13} fill="#0369a1" fontFamily="system-ui" fontWeight={500}>{ang}&deg;</text>);
+              }
+              return <g key={`pt-${i}`}>{elements}</g>;
+            })}
           </g>
         </svg>
         <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-slate-800/80 px-2 py-1 text-[10px] font-medium text-white">Ctrl + wheel: zoom • Middle drag or Ctrl+Drag: pan</div>
