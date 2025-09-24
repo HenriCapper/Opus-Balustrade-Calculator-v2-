@@ -5,7 +5,7 @@ import { useLayoutStore } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
 import { lookupChannelPs1 } from "@/data/channelPs1";
-import { solveSymmetric, aggregatePanels } from "@/data/panelSolver";
+import { solveSymmetric, aggregatePanels, findBestLayout } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
 import CustomShapeDesigner from "@/components/CustomShapeDesigner";
 import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions";
@@ -314,20 +314,24 @@ export default function LayoutForm() {
       const maxSpigotsPerPanel = spigotsPerPanel === 'auto' ? undefined : parseInt(spigotsPerPanel, 10);
       
       sidePanelLayouts = baseSideArray.map(len => {
-        const layout = solveSymmetric(
-          len, 
-          gapMin, 
-          gapMax, 
-          cap, 
-          glassMode === 'standard' ? 1 : 25,
-          ps1, // Pass PS1 data for spigot calculation
-          maxSpigotsPerPanel // Pass spigot constraint
-        );
+        // Legacy behaviour: standard mode uses symmetric only with continuous-ish step (10mm), stock can allow mixed
+        const panelStep = glassMode === 'standard' ? 10 : 25;
+        const allowMixed = glassMode === 'stock' && allowMixedSizes;
+        const layout = findBestLayout(
+          len,
+          gapMin,
+          gapMax,
+          cap,
+          panelStep,
+          ps1,
+          maxSpigotsPerPanel,
+          allowMixed
+        ) || solveSymmetric(len, gapMin, gapMax, cap, panelStep, ps1, maxSpigotsPerPanel);
         if (layout) {
           allPanels.push(...layout.panelWidths);
           return layout;
         }
-        return { panelWidths: [len], gap: gapSize, adjustedLength: len }; // fallback single panel
+        return { panelWidths: [len], gap: gapSize, adjustedLength: len };
       });
       if (allPanels.length) {
         const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0'), hmin:0,hmax:0,zone: windZone||'' } as any);

@@ -56,6 +56,84 @@ export function solveSymmetric(
   return best;
 }
 
+// Legacy mixed solver (A/B panels differing by up to 200mm) used only when allowMixed=true
+function legacyMixed(
+  run: number,
+  gapMin: number,
+  gapMax: number,
+  maxPanelWidth: number,
+  panelStep: number,
+  ps1?: Ps1Row,
+  maxSpigotsPerPanel?: number
+): PanelLayoutSide | null {
+  const step = panelStep || 1;
+  let count = Math.ceil(run / maxPanelWidth);
+  while (count < 600) {
+    for (let A = maxPanelWidth; A >= 200; A -= step) {
+      for (let B = A; B >= A - 200 && B >= 200; B -= step) {
+        for (let k = 1; k < count; k++) {
+          // Enforce spigot constraints per width if requested
+            if (ps1 && maxSpigotsPerPanel) {
+              const maxWidthAllowed = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+              if (A > maxWidthAllowed) continue;
+              if (B > maxWidthAllowed) continue;
+            }
+          const totalPanelsWidth = (count - k) * A + k * B;
+          const gap = (run - totalPanelsWidth) / (count + 1);
+          if (gap >= gapMin && gap <= gapMax) {
+            return { panelWidths: [...Array(count - k).fill(A), ...Array(k).fill(B)], gap, adjustedLength: run };
+          }
+        }
+      }
+    }
+    count++;
+  }
+  return null;
+}
+
+// Replicates legacy findBestLayout (without gate handling) including ±5mm nudge
+export function findBestLayout(
+  run: number,
+  gapMin: number,
+  gapMax: number,
+  maxPanelWidth: number,
+  panelStep: number,
+  ps1?: Ps1Row,
+  maxSpigotsPerPanel?: number,
+  allowMixed: boolean = false
+): PanelLayoutSide | null {
+  // Use legacy preference: try mixed first if allowed, else symmetric
+  const tryExact = (): PanelLayoutSide | null => {
+    if (allowMixed) {
+      return (
+        legacyMixed(run, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel) ||
+        solveSymmetric(run, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel)
+      );
+    }
+    return solveSymmetric(run, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel);
+  };
+  let best = tryExact();
+  if (best) return best;
+  // Nudge ±1..5mm preferring shorter first (- then +) and fewer panels (implicit in underlying solver)
+  for (let nudge = 1; nudge <= 5 && !best; nudge++) {
+    for (const dir of [-1, 1] as const) {
+      const adjusted = run + dir * nudge;
+      if (adjusted < 200) continue;
+      const candidate = allowMixed
+        ? legacyMixed(adjusted, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel) ||
+          solveSymmetric(adjusted, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel)
+        : solveSymmetric(adjusted, gapMin, gapMax, maxPanelWidth, panelStep, ps1, maxSpigotsPerPanel);
+      if (candidate) {
+        // store adjusted length
+        candidate.adjustedLength = adjusted;
+        best = candidate;
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 // Compute spigots per panel replicating legacy formula: max(2, ceil((panelWidth - 2*edge)/internal)+1)
 export function spigotsForPanel(panelWidth: number, ps1: Ps1Row): number {
   return Math.max(2, Math.ceil((panelWidth - 2 * ps1.edge) / ps1.internal) + 1);

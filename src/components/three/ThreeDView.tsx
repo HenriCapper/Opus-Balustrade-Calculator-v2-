@@ -4,6 +4,7 @@ import { useLayoutStore } from '@/store/useLayoutStore';
 import { CALC_OPTION_MAP, type CalcKey } from '@/data/calcOptions';
 import SceneCanvas from './SceneCanvas';
 import { SpigotLayout } from './objects/SpigotLayout';
+import { findBestLayout, solveSymmetric, aggregatePanels } from '@/data/panelSolver';
 
 // Container page for /:system/:calc/:shape/3d-view
 export default function ThreeDView() {
@@ -18,10 +19,9 @@ export default function ThreeDView() {
 
   // Capture original result once (or when a brand new calculation arrives)
   useEffect(() => {
-    if (result) {
-      // If the underlying calculation changed (different hash of panel widths), reset original reference
+    // Capture the ORIGINAL auto calculation only when current input mode is 'auto'
+    if (result && input?.spigotsPerPanel === 'auto') {
       const key = (result.allPanels || []).join('|');
-      // Store key inside the ref object to detect changes
       if (!originalPanelsRef.current || (originalPanelsRef.current as any)._key !== key) {
         originalPanelsRef.current = {
           summary: result.panelsSummary,
@@ -33,7 +33,7 @@ export default function ThreeDView() {
         } as any;
       }
     }
-  }, [result]);
+  }, [result, input?.spigotsPerPanel]);
   const finishes = useMemo(() => {
     const key = input?.calcKey as CalcKey | undefined;
     return key ? (CALC_OPTION_MAP[key]?.finishes || []) : [];
@@ -58,43 +58,132 @@ export default function ThreeDView() {
   function applySpigotsMode(mode: 'auto'|'2'|'3'){
     if(!input || !result) return;
     let nextResult = { ...result };
-    
+    const ps1 = result.ps1;
+    const sideRuns = result.sideRuns || input.sideLengths || [];
+    const fenceType = input.fenceType || 'balustrade';
+    const isPool = fenceType.toLowerCase().includes('pool');
+    const gapMin = isPool ? 14 : 14;
+    const gapMax = isPool ? 99 : 20;
+    // Max panel cap (handrail rules like initial calc)
+    let cap = 2000;
+    if (input.glassThickness === '12' && input.handrail === 'S25') cap = 1700;
+    else if (input.handrail === 'S40') cap = 1900;
+    // Panel step consistent with LayoutForm (10mm standard, 25mm stock)
+    const panelStep = input.glassMode === 'standard' ? 10 : 25;
+    const allowMixed = input.glassMode === 'stock' && input.allowMixedSizes;
+
     if (mode === 'auto') {
-      // Restore original auto-calculated summary if available
       if (originalPanelsRef.current) {
+        // Restore saved original state
         nextResult = {
           ...nextResult,
           panelsSummary: originalPanelsRef.current.summary,
           totalSpigots: originalPanelsRef.current.totalSpigots,
           estimatedSpigots: originalPanelsRef.current.estimatedSpigots,
-        };
-      }
-    } else {
-      // For fixed spigot modes (2 or 3), override display like CompliantLayout
-      const forced = parseInt(mode, 10);
-      if (result.allPanels && result.allPanels.length) {
-        // Re-group by width (to two decimals) replicating aggregatePanels ordering
-        const groups: Record<string,{count:number;width:number;}> = {};
-        result.allPanels.forEach(w => {
-          const key = w.toFixed(2);
-          if(!groups[key]) groups[key] = { count:0, width:w };
-          groups[key].count++;
+          sidePanelLayouts: originalPanelsRef.current.sidePanelLayouts,
+          allPanels: originalPanelsRef.current.allPanels,
+        } as any;
+      } else if (ps1) {
+        // Fallback: recompute layouts with no spigot constraint (auto) if original missing
+        const newLayouts: { panelWidths:number[]; gap:number; adjustedLength:number;}[] = [];
+        const allPanels: number[] = [];
+        sideRuns.forEach((len:number) => {
+          const layout = findBestLayout(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any,
+            undefined,
+            allowMixed
+          ) || solveSymmetric(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any
+          );
+          if (layout) { newLayouts.push(layout); allPanels.push(...layout.panelWidths); }
         });
-        const summary = Object.values(groups)
-          .sort((a,b)=> b.width - a.width)
-          .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${forced} spigots each)`)
-          .join('<br>');
-        const totalPanels = result.allPanels.length;
-        nextResult = {
-          ...nextResult,
-          panelsSummary: summary,
-          totalSpigots: forced * totalPanels,
-          estimatedSpigots: forced * totalPanels,
-        };
+        if (allPanels.length) {
+          const groups: Record<string,{count:number;width:number;}> = {};
+          allPanels.forEach(w=>{ const k=w.toFixed(2); if(!groups[k]) groups[k]={count:0,width:w}; groups[k].count++; });
+          const summary = Object.values(groups)
+            .sort((a,b)=>b.width - a.width)
+            .map(g=>`${g.count} × @${g.width.toFixed(2)} mm (${Math.max(2, Math.ceil((g.width - 2*ps1.edge)/ps1.internal)+1)} spigots each)`).join('<br>');
+          const totalSpigots = allPanels.reduce((acc,w)=>{
+            const s = Math.max(2, Math.ceil((w - 2*ps1.edge)/ps1.internal)+1);
+            return acc + s;
+          },0);
+          nextResult = {
+            ...nextResult,
+            sidePanelLayouts: newLayouts,
+            allPanels,
+            panelsSummary: summary,
+            totalSpigots,
+            estimatedSpigots: totalSpigots,
+          };
+        }
       }
+      setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
+      setLocalSpigotsMode(mode);
+      return;
     }
-    
-    // Persist updated input & derived result
+
+    // Recalculate layouts with spigot constraint
+    const maxSpigotsPerPanel = parseInt(mode, 10); // 2 or 3
+    const newLayouts: { panelWidths:number[]; gap:number; adjustedLength:number;}[] = [];
+    const allPanels: number[] = [];
+    if (ps1 && sideRuns.length) {
+      sideRuns.forEach((len:number) => {
+        // Try legacy findBestLayout with constraint; fallback to symmetric
+        const layout = findBestLayout(
+          len,
+          gapMin,
+          gapMax,
+          cap,
+          panelStep,
+          { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+          maxSpigotsPerPanel,
+          allowMixed
+        ) || solveSymmetric(
+          len,
+          gapMin,
+          gapMax,
+          cap,
+          panelStep,
+          { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+          maxSpigotsPerPanel
+        );
+        if (layout) {
+          newLayouts.push(layout);
+          allPanels.push(...layout.panelWidths);
+        }
+      });
+    }
+    // Aggregate with actual spigot count (should equal forced)
+    if (ps1 && allPanels.length) {
+      aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any);
+      // Force display spigots each to chosen mode (ensures consistent legacy formatting)
+      const groups: Record<string,{count:number;width:number;}> = {};
+      allPanels.forEach(w => { const k = w.toFixed(2); if(!groups[k]) groups[k]={count:0,width:w}; groups[k].count++; });
+      const summary = Object.values(groups)
+        .sort((a,b)=>b.width - a.width)
+        .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${maxSpigotsPerPanel} spigots each)`) // match forced mode style
+        .join('<br>');
+      const totalPanels = allPanels.length;
+      const totalSpigots = totalPanels * maxSpigotsPerPanel;
+      nextResult = {
+        ...nextResult,
+        sidePanelLayouts: newLayouts,
+        allPanels,
+        panelsSummary: summary,
+        totalSpigots,
+        estimatedSpigots: totalSpigots,
+      };
+    }
     setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
     setLocalSpigotsMode(mode);
   }
