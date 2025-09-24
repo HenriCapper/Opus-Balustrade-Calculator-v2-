@@ -128,6 +128,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       if (lenMm === 0) return; // ignore zero length
     }
     setPoints(p => [...p, next]);
+    // Clear ghost so the angle arc disappears until mouse moves again (matches legacy behavior)
+    setGhost(null);
   }
 
   function handleMouseMove(e: React.MouseEvent) {
@@ -300,26 +302,30 @@ export default function CustomShapeDesigner({ value, onChange, className, height
 
             {/* points and angle labels */}
             {points.map((p, i) => {
-              const elements = [
-                <circle key={`c${i}`} cx={p.x} cy={p.y} r={7} fill="#0284c7" stroke="#fff" strokeWidth={2} />,
-                <text key={`t${i}`} x={p.x+12} y={p.y-12} fontSize={14} fontFamily="system-ui, sans-serif" fill="#0369a1" fontWeight={600}>{String.fromCharCode(65+i)}</text>
-              ];
+              // Internal angle for middle vertices
               if (i > 0 && i < points.length - 1) {
                 const ang = internalAngle(points[i-1], p, points[i+1]);
-                // Find an outward direction by averaging normalized reversed vectors (like legacy)
-                const v1x = points[i-1].x - p.x; const v1y = points[i-1].y - p.y;
-                const v2x = points[i+1].x - p.x; const v2y = points[i+1].y - p.y;
-                const m1 = Math.sqrt(v1x*v1x + v1y*v1y) || 1;
-                const m2 = Math.sqrt(v2x*v2x + v2y*v2y) || 1;
-                const bx = v1x/m1 + v2x/m2;
-                const by = v1y/m1 + v2y/m2;
-                const bm = Math.sqrt(bx*bx + by*by) || 1;
-                const offset = 34;
-                const labelX = p.x + (bx/bm)*offset;
-                const labelY = p.y + (by/bm)*offset;
-                elements.push(<text key={`angle${i}`} x={labelX} y={labelY} fontSize={13} fill="#0369a1" fontFamily="system-ui" fontWeight={500}>{ang}&deg;</text>);
+                if (ang !== 180) {
+                  const isRightAngle = ang === 90;
+                  const fill = isRightAngle ? '#22c55e' : '#fbbf24';
+                  return (
+                    <g key={`pt-${i}`}>
+                      {/* Angle badge exactly on the point */}
+                      <circle cx={p.x} cy={p.y} r={14} fill={fill} stroke="#ffffff" strokeWidth={3} />
+                      <text x={p.x} y={p.y+4} fontSize={11} fontFamily="system-ui" fontWeight={700} fill="#ffffff" textAnchor="middle">{ang}&deg;</text>
+                      {/* Point letter still shown slightly offset (same style as endpoints) */}
+                      <text x={p.x+16} y={p.y-14} fontSize={14} fontFamily="system-ui, sans-serif" fill="#0369a1" fontWeight={600}>{String.fromCharCode(65+i)}</text>
+                    </g>
+                  );
+                }
               }
-              return <g key={`pt-${i}`}>{elements}</g>;
+              // Endpoints or straight (180°) joints: keep original point styling
+              return (
+                <g key={`pt-${i}`}>
+                  <circle cx={p.x} cy={p.y} r={7} fill="#0284c7" stroke="#fff" strokeWidth={2} />
+                  <text x={p.x+12} y={p.y-12} fontSize={14} fontFamily="system-ui, sans-serif" fill="#0369a1" fontWeight={600}>{String.fromCharCode(65+i)}</text>
+                </g>
+              );
             })}
           </g>
         </svg>
