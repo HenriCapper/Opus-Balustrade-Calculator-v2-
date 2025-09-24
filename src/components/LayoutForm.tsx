@@ -310,8 +310,19 @@ export default function LayoutForm() {
         // eslint-disable-next-line no-console
         console.log('[custom-shape] calculating with runs', customRuns);
       }
+      // Convert spigotsPerPanel to numeric constraint for solver
+      const maxSpigotsPerPanel = spigotsPerPanel === 'auto' ? undefined : parseInt(spigotsPerPanel, 10);
+      
       sidePanelLayouts = baseSideArray.map(len => {
-        const layout = solveSymmetric(len, gapMin, gapMax, cap, glassMode === 'standard' ? 1 : 25);
+        const layout = solveSymmetric(
+          len, 
+          gapMin, 
+          gapMax, 
+          cap, 
+          glassMode === 'standard' ? 1 : 25,
+          ps1, // Pass PS1 data for spigot calculation
+          maxSpigotsPerPanel // Pass spigot constraint
+        );
         if (layout) {
           allPanels.push(...layout.panelWidths);
           return layout;

@@ -13,8 +13,8 @@ export default function ThreeDView() {
   const result = useLayoutStore(s => s.result);
   const setLayout = useLayoutStore(s=>s.setLayout);
   const [localSpigotsMode, setLocalSpigotsMode] = useState<'auto'|'2'|'3'|null>(null);
-  // Preserve the original (auto) panels summary + totals so we can restore when user toggles back to 'auto'
-  const originalPanelsRef = useRef<{ summary?: string; totalSpigots?: number; estimatedSpigots?: number } | null>(null);
+  // Preserve the original (auto) panels summary + totals + layouts so we can restore when user toggles back to 'auto'
+  const originalPanelsRef = useRef<{ summary?: string; totalSpigots?: number; estimatedSpigots?: number; sidePanelLayouts?: any[]; allPanels?: number[] } | null>(null);
 
   // Capture original result once (or when a brand new calculation arrives)
   useEffect(() => {
@@ -27,6 +27,8 @@ export default function ThreeDView() {
           summary: result.panelsSummary,
           totalSpigots: result.totalSpigots,
           estimatedSpigots: result.estimatedSpigots,
+          sidePanelLayouts: result.sidePanelLayouts,
+          allPanels: result.allPanels,
           _key: key as any,
         } as any;
       }
@@ -56,6 +58,7 @@ export default function ThreeDView() {
   function applySpigotsMode(mode: 'auto'|'2'|'3'){
     if(!input || !result) return;
     let nextResult = { ...result };
+    
     if (mode === 'auto') {
       // Restore original auto-calculated summary if available
       if (originalPanelsRef.current) {
@@ -67,6 +70,7 @@ export default function ThreeDView() {
         };
       }
     } else {
+      // For fixed spigot modes (2 or 3), override display like CompliantLayout
       const forced = parseInt(mode, 10);
       if (result.allPanels && result.allPanels.length) {
         // Re-group by width (to two decimals) replicating aggregatePanels ordering
@@ -83,12 +87,13 @@ export default function ThreeDView() {
         const totalPanels = result.allPanels.length;
         nextResult = {
           ...nextResult,
-            panelsSummary: summary,
-            totalSpigots: forced * totalPanels,
-            estimatedSpigots: forced * totalPanels,
+          panelsSummary: summary,
+          totalSpigots: forced * totalPanels,
+          estimatedSpigots: forced * totalPanels,
         };
       }
     }
+    
     // Persist updated input & derived result
     setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
     setLocalSpigotsMode(mode);

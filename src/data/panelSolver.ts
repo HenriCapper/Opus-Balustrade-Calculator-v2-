@@ -6,17 +6,43 @@ export interface PanelLayoutSide {
   adjustedLength: number; // mm after potential nudge
 }
 
-// Simplified symmetrical solver focusing on matching legacy output for standard mode, no gates, no mixed panels.
-// Attempts to find uniform panel width (>=200) such that gaps between panels (including both ends) fall within range.
-// Returns the layout with minimal panel count (wider panels) similar to legacy preference.
-export function solveSymmetric(run: number, gapMin: number, gapMax: number, maxPanelWidth: number, panelStep: number): PanelLayoutSide | null {
+// Enhanced symmetrical solver that respects spigot constraints from legacy SP12 calculator.
+// When maxSpigotsPerPanel is specified, panel widths are constrained to not exceed
+// the maximum width achievable with that number of spigots: edge*2 + (spigots-1)*internalSpacing
+export function solveSymmetric(
+  run: number, 
+  gapMin: number, 
+  gapMax: number, 
+  maxPanelWidth: number, 
+  panelStep: number,
+  ps1?: Ps1Row,
+  maxSpigotsPerPanel?: number
+): PanelLayoutSide | null {
   let best: PanelLayoutSide | null = null;
-  // Panel count lower bound via max width
-  let cnt = Math.ceil(run / maxPanelWidth);
+  
+  // Apply spigot constraint to max panel width if specified
+  let effectiveMaxWidth = maxPanelWidth;
+  if (maxSpigotsPerPanel && ps1) {
+    const spigotConstrainedWidth = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+    effectiveMaxWidth = Math.min(maxPanelWidth, spigotConstrainedWidth);
+  }
+  
+  // Panel count lower bound via effective max width
+  let cnt = Math.ceil(run / effectiveMaxWidth);
   while (cnt < 600) {
     // derive candidate width by distributing run minus gaps; iterate widths descending
-    let pw = Math.min(maxPanelWidth, Math.floor(run / cnt / (panelStep || 1)) * (panelStep || 1));
+    let pw = Math.min(effectiveMaxWidth, Math.floor(run / cnt / (panelStep || 1)) * (panelStep || 1));
     while (pw >= 200) {
+      // Additional check: ensure panel width doesn't exceed spigot-constrained width
+      if (maxSpigotsPerPanel && ps1) {
+        const actualSpigots = spigotsForPanel(pw, ps1);
+        if (actualSpigots > maxSpigotsPerPanel) {
+          // This panel width requires too many spigots, reduce it
+          pw = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+          if (pw < 200) break; // Too small, try next count
+        }
+      }
+      
       const gap = (run - pw * cnt) / (cnt + 1);
       if (gap >= gapMin && gap <= gapMax) {
         const layout: PanelLayoutSide = { panelWidths: Array(cnt).fill(pw), gap, adjustedLength: run };
