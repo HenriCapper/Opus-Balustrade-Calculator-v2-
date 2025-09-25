@@ -557,7 +557,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
             })}
           </g>
         </svg>
-        <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-slate-800/80 px-2 py-1 text-[10px] font-medium text-white">Ctrl + wheel: zoom • Middle drag or Ctrl+Drag: pan</div>
+        <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-slate-800/80 px-2 py-1 text-[10px] font-medium text-white">Ctrl + wheel: zoom • Middle drag or Ctrl+Drag: pan • Esc: cancel</div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-3">
         {runs.length === 0 && (
