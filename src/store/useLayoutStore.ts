@@ -45,6 +45,12 @@ export interface LayoutCalculationResult {
   }[];
   // Flattened list of all panel widths (ordered by sides) for convenience
   allPanels?: number[];
+  // Gate drawing meta per side (for elevation visuals)
+  sideGatesRender?: {
+    enabled: boolean;
+    panelIndex: number; // draw gate after this panel
+    hingeOnLeft: boolean; // default false
+  }[];
 }
 
 export interface LayoutState {

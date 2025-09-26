@@ -5,7 +5,7 @@ import { useLayoutStore } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
 import { lookupChannelPs1 } from "@/data/channelPs1";
-import { solveSymmetric, aggregatePanels, findBestLayout } from "@/data/panelSolver";
+import { solveSymmetric, aggregatePanels, findBestLayout, findGateAdjustedLayout } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
 import CustomShapeDesigner from "@/components/CustomShapeDesigner";
 import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions";
@@ -194,7 +194,36 @@ export default function LayoutForm() {
   // Track side lengths (A-D) for current shape (only the first N used)
   const [sideLengths, setSideLengths] = useState<number[]>([0,0,0,0]);
   // Custom shape dynamic runs (A,B,C,...)
-  const [customRuns, setCustomRuns] = useState<{id:string; length:number; dx:number; dy:number;}[]>([]);
+  const [customRuns, setCustomRuns] = useState<{id:string; length:number; dx:number; dy:number; gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }}[]>([]);
+  // Gate controls
+  // For standard shapes A-D: track gate per side and simple position (left/middle/right)
+  const [sideGates, setSideGates] = useState<{ enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }[]>([
+    { enabled: false, position: 'middle', hingeOnLeft: false },
+    { enabled: false, position: 'middle', hingeOnLeft: false },
+    { enabled: false, position: 'middle', hingeOnLeft: false },
+    { enabled: false, position: 'middle', hingeOnLeft: false },
+  ]);
+  // For custom shapes, allow one gate per run initially (can extend later)
+  const [customGateByRun, setCustomGateByRun] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }>>({});
+
+  // Keep custom gate map in sync when designer supplies gate values on runs
+  useEffect(() => {
+    if (!customRuns || !customRuns.length) {
+      setCustomGateByRun({});
+      return;
+    }
+    setCustomGateByRun(prev => {
+      const next: Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }> = {};
+      for (const r of customRuns) {
+        const existing = prev[r.id];
+        const incoming = r.gate;
+        if (incoming) next[r.id] = { enabled: !!incoming.enabled, position: incoming.position || 'middle', hingeOnLeft: !!incoming.hingeOnLeft };
+        else if (existing) next[r.id] = existing; // preserve manual settings from form
+        else next[r.id] = { enabled: false, position: 'middle' };
+      }
+      return next;
+    });
+  }, [customRuns]);
 
   // Additional controlled selects to capture values for calculation
   const [windZone, setWindZone] = useState<string | undefined>(defaultWind);
@@ -287,14 +316,16 @@ export default function LayoutForm() {
             windZone || undefined,
           )
         : lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
-    const totalRun = usedSides.reduce((a,b)=>a+b,0);
+  const totalRun = usedSides.reduce((a,b)=>a+b,0);
   let estimatedSpigots: number | undefined;
   let estimatedPanels: number | undefined;
   let panelsSummary: string | undefined;
   let totalSpigots: number | undefined;
     const notes: string[] = [];
-    let sidePanelLayouts: { panelWidths: number[]; gap: number; adjustedLength: number;}[] = [];
+  let sidePanelLayouts: { panelWidths: number[]; gap: number; adjustedLength: number;}[] = [];
     let allPanels: number[] = [];
+  let gateCount = 0;
+  const sideGatesRender: { enabled: boolean; panelIndex: number; hingeOnLeft: boolean }[] = [];
     if (ps1) {
       // Symmetric solver per side (legacy simple case). Mixed sizes & gates not yet.
       const gapMin = fenceCategory === 'balustrade' ? 14 : 14;
@@ -313,32 +344,66 @@ export default function LayoutForm() {
       // Convert spigotsPerPanel to numeric constraint for solver
       const maxSpigotsPerPanel = spigotsPerPanel === 'auto' ? undefined : parseInt(spigotsPerPanel, 10);
       
-      sidePanelLayouts = baseSideArray.map(len => {
+  sidePanelLayouts = baseSideArray.map((len, idx) => {
         // Legacy behaviour: standard mode uses symmetric only with continuous-ish step (10mm), stock can allow mixed
         const panelStep = glassMode === 'standard' ? 10 : 25;
         const allowMixed = glassMode === 'stock' && allowMixedSizes;
-        const layout = findBestLayout(
-          len,
-          gapMin,
-          gapMax,
-          cap,
-          panelStep,
-          ps1,
-          maxSpigotsPerPanel,
-          allowMixed
-        ) || solveSymmetric(len, gapMin, gapMax, cap, panelStep, ps1, maxSpigotsPerPanel);
-        if (layout) {
-          allPanels.push(...layout.panelWidths);
-          return layout;
+
+        // Gate handling
+        const GATE_TOTAL_WIDTH = 905; // 890 leaf + 5 hinge + 10 latch
+        let effectiveLen = len;
+        let hasGate = false;
+        if (shape === 'custom') {
+          const runId = customRuns[idx]?.id;
+          const cfg = runId ? customGateByRun[runId] : undefined;
+          hasGate = !!cfg?.enabled;
+        } else {
+          hasGate = !!sideGates[idx]?.enabled;
         }
-        return { panelWidths: [len], gap: gapSize, adjustedLength: len };
+        if (hasGate) {
+          effectiveLen = len - GATE_TOTAL_WIDTH;
+          if (effectiveLen < 200) {
+            // Minimum space for at least one panel; ignore gate and leave a note
+            notes.push(`Side ${String.fromCharCode(65 + idx)} too short for a gate – requires ≥ ${GATE_TOTAL_WIDTH + 200} mm (gate + min panel). Gate ignored for this side.`);
+            hasGate = false;
+            effectiveLen = len;
+          } else {
+            gateCount += 1;
+          }
+        }
+
+        const baseLayout = hasGate
+          ? findGateAdjustedLayout(effectiveLen, gapMin, gapMax, cap, panelStep, ps1, maxSpigotsPerPanel, allowMixed)
+          : findBestLayout(effectiveLen, gapMin, gapMax, cap, panelStep, ps1, maxSpigotsPerPanel, allowMixed) ||
+            solveSymmetric(effectiveLen, gapMin, gapMax, cap, panelStep, ps1, maxSpigotsPerPanel);
+
+        const layout = baseLayout || { panelWidths: [effectiveLen], gap: gapSize, adjustedLength: effectiveLen };
+        if (layout.panelWidths && layout.panelWidths.length) allPanels.push(...layout.panelWidths);
+        // Record gate render info for SideVisuals
+        if (hasGate) {
+          // position: left -> first quarter; right -> last quarter; middle -> center
+          const total = layout.panelWidths.length;
+          let pIndex = Math.floor(total / 2);
+          const pos = shape === 'custom'
+            ? (customRuns[idx]?.id ? (customGateByRun[customRuns[idx].id]?.position || 'middle') : 'middle')
+            : (sideGates[idx]?.position || 'middle');
+          if (pos === 'left') pIndex = 0;
+          if (pos === 'right') pIndex = Math.max(0, total - 1);
+          const hingeOnLeft = shape === 'custom'
+            ? !!(customRuns[idx]?.id && customGateByRun[customRuns[idx].id!]?.hingeOnLeft)
+            : !!sideGates[idx]?.hingeOnLeft;
+          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft };
+        } else {
+          sideGatesRender[idx] = { enabled: false, panelIndex: 0, hingeOnLeft: false };
+        }
+        return layout;
       });
       if (allPanels.length) {
         const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0'), hmin:0,hmax:0,zone: windZone||'' } as any);
         panelsSummary = agg.panelsSummary;
-        totalSpigots = agg.totalSpigots;
+        totalSpigots = agg.totalSpigots + gateCount * 2; // add 2 posts per gate
         estimatedPanels = agg.totalPanels;
-        estimatedSpigots = agg.totalSpigots;
+        estimatedSpigots = totalSpigots;
       }
     } else {
       notes.push('No PS1 row found for selected parameters (placeholder calculation).');
@@ -371,6 +436,7 @@ export default function LayoutForm() {
       sidePanelLayouts,
       allPanels,
       notes,
+      sideGatesRender,
     });
   }
 
@@ -419,6 +485,53 @@ export default function LayoutForm() {
               onBlur={() => setFocusedSide((prev) => (prev === i ? null : prev))}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
             />
+            {/* Gate controls per side */}
+            <div className="mt-2 flex items-center justify-between">
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-sky-600"
+                  checked={sideGates[i]?.enabled || false}
+                  onChange={(e)=> setSideGates(prev => {
+                    const next = [...prev];
+                    next[i] = { ...(next[i] || { position: 'middle' as const }), enabled: e.target.checked };
+                    return next;
+                  })}
+                />
+                Gate required? (890mm + clearances)
+              </label>
+              {(sideGates[i]?.enabled) && (
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-slate-600">Pos</label>
+                  <select
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                    value={sideGates[i]?.position || 'middle'}
+                    onChange={(e)=> setSideGates(prev => {
+                      const next = [...prev];
+                      next[i] = { ...(next[i] || { enabled: true }), position: e.target.value as 'left'|'middle'|'right' };
+                      return next;
+                    })}
+                  >
+                    <option value="left">Left</option>
+                    <option value="middle">Middle</option>
+                    <option value="right">Right</option>
+                  </select>
+                  <label className="text-[11px] text-slate-600">Hinge</label>
+                  <select
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                    value={(sideGates[i]?.hingeOnLeft ? 'left' : 'right')}
+                    onChange={(e)=> setSideGates(prev => {
+                      const next = [...prev];
+                      next[i] = { ...(next[i] || { enabled: true }), hingeOnLeft: e.target.value === 'left' };
+                      return next;
+                    })}
+                  >
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </FieldGroup>
         ))}
   <FieldGroup>

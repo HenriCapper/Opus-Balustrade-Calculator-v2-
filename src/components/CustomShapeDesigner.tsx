@@ -21,6 +21,7 @@ export interface CustomRun {
   length: number;    // mm (snapped)
   dx: number;        // mm delta x (plan view)
   dy: number;        // mm delta y (plan view)
+  gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean };
 }
 
 export interface CustomShapeDesignerProps {
@@ -91,6 +92,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   // Track last client position (pixels) for panning deltas
   const panOrigin = useRef<{ clientX: number; clientY: number } | null>(null);
   const [runs, setRuns] = useState<CustomRun[]>(value || []);
+  // Gate state per run id (A, B, C...)
+  const [gateById, setGateById] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }>>({});
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const MOUSE_RESUME_HIT_R = 10; // svg units
   const TOUCH_RESUME_HIT_R = 18; // svg units (bigger hit target)
@@ -119,11 +122,12 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       const rawDx = (b.x - a.x);
       const rawDy = (b.y - a.y);
       const { dx, dy, lenMm } = snapLength(rawDx, rawDy);
-      newRuns.push({ id: String.fromCharCode(65 + (i-1)), length: lenMm, dx: dx * MM_PER_UNIT, dy: dy * MM_PER_UNIT });
+      const id = String.fromCharCode(65 + (i-1));
+      newRuns.push({ id, length: lenMm, dx: dx * MM_PER_UNIT, dy: dy * MM_PER_UNIT, gate: gateById[id] });
     }
     setRuns(newRuns);
     onChange?.(newRuns);
-  }, [points, onChange]);
+  }, [points, onChange, gateById]);
 
   // Keyboard: ESC cancels current drawing (hides ghost and pauses until next click)
   useEffect(() => {
@@ -494,6 +498,17 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     });
   }
 
+  // Gate handlers in list UI
+  function toggleGateFor(id: string, enabled: boolean) {
+    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { position: 'middle' as const, hingeOnLeft: false }), enabled } }));
+  }
+  function setGatePosition(id: string, position: 'left'|'middle'|'right') {
+    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, hingeOnLeft: false }), position } }));
+  }
+  function setGateHinge(id: string, hinge: 'left'|'right') {
+    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, position: 'middle' as const }), hingeOnLeft: hinge === 'left' } }));
+  }
+
   function handleUndo() {
     setPoints(prev => prev.slice(0, -1));
   }
@@ -575,6 +590,27 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               return (
                 <g key={i}>
                   <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
+                  {/* Gate marker if enabled for this run */}
+                  {(() => {
+                    const id = String.fromCharCode(65 + (i-1));
+                    const cfg = gateById[id];
+                    if (!cfg?.enabled) return null;
+                    // Place marker based on position selection: left/middle/right
+                    let t = 0.5; // middle
+                    if (cfg.position === 'left') t = 0.2;
+                    if (cfg.position === 'right') t = 0.8;
+                    const gx = a.x + (b.x - a.x) * t;
+                    const gy = a.y + (b.y - a.y) * t;
+                    const w = 50 * textScaleAll; const h = 18 * textScaleAll;
+                    return (
+                      <g>
+                        <rect x={gx - w/2} y={gy - h/2} width={w} height={h} fill="#16a34a" rx={3} ry={3} opacity={0.9} />
+                        <text x={gx} y={gy + 4 * textScaleAll} textAnchor="middle" fontSize={scaledFont(12)} fill="#ffffff" fontFamily="system-ui" fontWeight={700}>
+                          Gate
+                        </text>
+                      </g>
+                    );
+                  })()}
                   <text x={lx} y={ly} textAnchor="middle" fontSize={scaledFont(18)} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{`${String.fromCharCode(65 + (i-1))}: ${lenMm} mm`}</text>
                 </g>
               );
@@ -713,8 +749,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
         {runs.length > 0 && (
           <div className="flex flex-wrap gap-3">
             {runs.map((r,i)=>(
-              <label key={r.id} className="flex flex-col text-[11px] font-medium text-slate-600">
-                <span className="mb-1 text-slate-500">Side {r.id}</span>
+              <div key={r.id} className="flex flex-col gap-1 rounded border border-slate-200 p-2">
+                <label className="text-[11px] font-medium text-slate-600">Side {r.id}</label>
                 <input
                   type="number"
                   className="w-28 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
@@ -723,7 +759,41 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                   step={5}
                   onChange={(e)=>handleLengthEdit(i, e.target.value)}
                 />
-              </label>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 accent-sky-600"
+                      checked={!!gateById[r.id]?.enabled}
+                      onChange={(e)=> toggleGateFor(r.id, e.target.checked)}
+                    />
+                    Gate?
+                  </label>
+                  {!!gateById[r.id]?.enabled && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] text-slate-600">Pos</label>
+                      <select
+                        value={gateById[r.id]?.position || 'middle'}
+                        onChange={(e)=> setGatePosition(r.id, e.target.value as any)}
+                        className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
+                      >
+                        <option value="left">Left</option>
+                        <option value="middle">Middle</option>
+                        <option value="right">Right</option>
+                      </select>
+                      <label className="text-[10px] text-slate-600">Hinge</label>
+                      <select
+                        value={(gateById[r.id]?.hingeOnLeft ? 'left' : 'right')}
+                        onChange={(e)=> setGateHinge(r.id, e.target.value as any)}
+                        className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
+                      >
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         )}

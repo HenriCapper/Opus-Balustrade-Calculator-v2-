@@ -134,6 +134,98 @@ export function findBestLayout(
   return best;
 }
 
+// Gate-adjusted layout: when placing a gate in a side, the uniform fence gaps typically reduce by one,
+// effectively making the number of gaps equal to the number of panels (cnt) instead of (cnt+1).
+// This mirrors the legacy calculator's gate solver. Supports optional mixed panels and spigot constraints.
+export function findGateAdjustedLayout(
+  run: number,
+  gapMin: number,
+  gapMax: number,
+  maxPanelWidth: number,
+  panelStep: number,
+  ps1?: Ps1Row,
+  maxSpigotsPerPanel?: number,
+  allowMixed: boolean = false
+): PanelLayoutSide | null {
+  const step = panelStep || 1;
+
+  const sym = (): PanelLayoutSide | null => {
+    // fewest panels first
+    let cnt = Math.ceil(run / maxPanelWidth);
+    while (cnt < 600) {
+      let pw = Math.min(maxPanelWidth, Math.floor(run / cnt / step) * step);
+      while (pw >= 200) {
+        // spigot constraint per panel width
+        if (ps1 && maxSpigotsPerPanel) {
+          const maxWidthAllowed = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+          if (pw > maxWidthAllowed) {
+            pw = maxWidthAllowed;
+          }
+        }
+        // gate-adjusted gap formula: gaps = cnt
+        const gap = (run - pw * cnt) / cnt;
+        if (gap >= gapMin && gap <= gapMax) {
+          return { panelWidths: Array(cnt).fill(pw), gap, adjustedLength: run };
+        }
+        pw -= step;
+      }
+      cnt++;
+    }
+    return null;
+  };
+
+  const mix = (): PanelLayoutSide | null => {
+    let cnt = Math.ceil(run / maxPanelWidth);
+    while (cnt < 600) {
+      for (let A = maxPanelWidth; A >= 200; A -= step) {
+        for (let B = A; B >= Math.max(200, A - 200); B -= step) {
+          for (let k = 1; k < cnt; k++) {
+            if (ps1 && maxSpigotsPerPanel) {
+              const maxWidthAllowed = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+              if (A > maxWidthAllowed || B > maxWidthAllowed) continue;
+            }
+            const tot = (cnt - k) * A + k * B;
+            const gap = (run - tot) / cnt; // gate-adjusted
+            if (gap >= gapMin && gap <= gapMax) {
+              return { panelWidths: [...Array(cnt - k).fill(A), ...Array(k).fill(B)], gap, adjustedLength: run };
+            }
+          }
+        }
+      }
+      cnt++;
+    }
+    return null;
+  };
+
+  // try exact run first
+  let best = allowMixed ? (mix() || sym()) : sym();
+  if (best) return best;
+  // try small nudges ±1..5mm
+  for (let n = 1; n <= 5 && !best; n++) {
+    for (const dir of [-1, 1] as const) {
+      const adjusted = run + dir * n;
+      if (adjusted < 200) continue;
+      // temporarily recurse using adjusted value
+      const candidate = findGateAdjustedLayout(
+        adjusted,
+        gapMin,
+        gapMax,
+        maxPanelWidth,
+        panelStep,
+        ps1,
+        maxSpigotsPerPanel,
+        allowMixed
+      );
+      if (candidate) {
+        candidate.adjustedLength = adjusted;
+        best = candidate;
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 // Compute spigots per panel replicating legacy formula: max(2, ceil((panelWidth - 2*edge)/internal)+1)
 export function spigotsForPanel(panelWidth: number, ps1: Ps1Row): number {
   return Math.max(2, Math.ceil((panelWidth - 2 * ps1.edge) / ps1.internal) + 1);

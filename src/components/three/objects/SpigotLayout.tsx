@@ -156,23 +156,39 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     glassHeight: number;
   } | null>(() => {
     if (!input || !result) return null;
-  const { sideLengths, glassHeight = 1100, customVectors } = input as any;
+    const { sideLengths, glassHeight = 1100, customVectors } = input as any;
     if (!sideLengths || !sideLengths.length) return null;
     const ps1 = result.ps1;
-  const segments = buildSegments(sideLengths, customVectors);
+    const segments = buildSegments(sideLengths, customVectors);
     const internal = ps1?.internal ?? 800;
     const edge = ps1?.edge ?? 250;
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
 
     const layouts = result.sidePanelLayouts;
+    const gates = result.sideGatesRender || [];
+    const GATE_TOTAL_WIDTH = 905;
     const panelMeshes: PanelMesh[] = [];
     if (layouts && layouts.length) {
       layouts.forEach((layout, i) => {
         const seg = segments[i];
         if (!seg) return;
         const { panelWidths, gap } = layout;
+        const gate = gates[i];
         let cursor = gap;
-        panelWidths.forEach((w) => {
+        let gateInserted = false;
+        panelWidths.forEach((w, j) => {
+          // Insert gate slot at the correct panel index (after panelIndex)
+          if (gate && gate.enabled && !gateInserted && j === gate.panelIndex) {
+            // Insert a gate block (skip 905mm, don't render a panel for it)
+            // const gateStart = cursor;
+            // const midLocal = seg.dir.clone().multiplyScalar(gateStart + GATE_TOTAL_WIDTH / 2);
+            // const mid = seg.start.clone().add(midLocal);
+            // Optionally: could push a special mesh for the gate, but for now just skip panel
+            // Advance cursor by gate width
+            cursor += GATE_TOTAL_WIDTH;
+            gateInserted = true;
+          }
+          // Render normal panel
           const startOff = cursor;
           const midLocal = seg.dir.clone().multiplyScalar(startOff + w / 2);
           const mid = seg.start.clone().add(midLocal);
