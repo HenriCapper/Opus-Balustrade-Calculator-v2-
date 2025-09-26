@@ -81,6 +81,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   const [points, setPoints] = useState<Pt[]>(() => []);
   const [ghost, setGhost] = useState<Pt | null>(null);
   const [isDrawingActive, setIsDrawingActive] = useState(true); // ESC cancels, next click resumes
+  // Which endpoint to extend from when resuming: 'end' (default, last point) or 'start' (first point)
+  const [extendFrom, setExtendFrom] = useState<'start' | 'end'>('end');
   // Use legacy-like viewBox zoom/pan so mouse anchoring matches exactly
   // Start a bit zoomed-in compared to the previous default
   // Start even more zoomed-in (smaller viewBox for closer view)
@@ -212,21 +214,22 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       return;
     }
 
-    // If paused, only resume when touching the last point (hit test)
+    // If paused, resume when touching the LAST or FIRST point (hit test)
     if (!isDrawingActive && points.length) {
       const svgPt = clientToSvg(e);
+      const first = points[0];
       const last = points[points.length - 1];
-      const dxh = svgPt.x - last.x;
-      const dyh = svgPt.y - last.y;
-      const dist = Math.hypot(dxh, dyh);
-        if (dist <= TOUCH_RESUME_HIT_R) {
-          // Preview: set ghost to raw cursor world coordinates for perfect alignment
-          setGhost({ x: svgPt.x, y: svgPt.y });
+      const dLast = Math.hypot(svgPt.x - last.x, svgPt.y - last.y);
+      const dFirst = Math.hypot(svgPt.x - first.x, svgPt.y - first.y);
+      if (dLast <= TOUCH_RESUME_HIT_R || dFirst <= TOUCH_RESUME_HIT_R) {
+        // Preview: set ghost to raw cursor world coordinates for perfect alignment
+        setGhost({ x: svgPt.x, y: svgPt.y });
+        setExtendFrom(dFirst <= TOUCH_RESUME_HIT_R ? 'start' : 'end');
         setIsDrawingActive(true);
         // don't start a draw drag yet (user can adjust by moving)
         setIsDraggingDraw(true);
       }
-      // If not near last point while paused, do nothing (allow pinch/pan only)
+      // If not near endpoints while paused, do nothing (allow pinch/pan only)
       return;
     }
 
@@ -318,13 +321,32 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     // If we have at least one anchor, commit the next point at release
     if (points.length) {
       const svgPt = clientToSvg(e);
-      let next = svgPt;
-      const snappedAngle = snapAngle(points[points.length-1], svgPt);
-      const { dx, dy, lenMm } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-      const prev = points[points.length-1];
-      next = { x: prev.x + dx, y: prev.y + dy };
+      // If user released near the opposite endpoint, close the shape and stop drawing
+      if (points.length >= 2) {
+        const first = points[0];
+        const last = points[points.length - 1];
+        const dToFirst = Math.hypot(svgPt.x - first.x, svgPt.y - first.y);
+        const dToLast = Math.hypot(svgPt.x - last.x, svgPt.y - last.y);
+        if (extendFrom === 'end' && dToFirst <= TOUCH_RESUME_HIT_R) {
+          setPoints(prev => [...prev, prev[0]]);
+          setGhost(null);
+          setIsDrawingActive(false);
+          return;
+        }
+        if (extendFrom === 'start' && dToLast <= TOUCH_RESUME_HIT_R) {
+          setPoints(prev => [prev[prev.length - 1], ...prev]);
+          setGhost(null);
+          setIsDrawingActive(false);
+          return;
+        }
+      }
+      const anchorIndex = extendFrom === 'start' ? 0 : points.length - 1;
+      const anchor = points[anchorIndex];
+      const snappedAngle = snapAngle(anchor, svgPt);
+      const { dx, dy, lenMm } = snapLength(snappedAngle.x - anchor.x, snappedAngle.y - anchor.y);
+      const next = { x: anchor.x + dx, y: anchor.y + dy };
       if (lenMm > 0) {
-        setPoints(p => [...p, next]);
+        setPoints(p => (extendFrom === 'start' ? [next, ...p] : [...p, next]));
       }
       setGhost(null);
       return;
@@ -338,27 +360,55 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     const svgPt = clientToSvg(e);
     // If paused, only resume when clicking the last point
     if (!isDrawingActive && points.length) {
+      const first = points[0];
       const last = points[points.length - 1];
-      const dxh = svgPt.x - last.x;
-      const dyh = svgPt.y - last.y;
-      const dist = Math.hypot(dxh, dyh);
-      if (dist <= MOUSE_RESUME_HIT_R) {
-        const snappedAngle = snapAngle(last, svgPt);
-        // Preview: angle snap only
+      const dLast = Math.hypot(svgPt.x - last.x, svgPt.y - last.y);
+      const dFirst = Math.hypot(svgPt.x - first.x, svgPt.y - first.y);
+      if (dLast <= MOUSE_RESUME_HIT_R || dFirst <= MOUSE_RESUME_HIT_R) {
+        const anchor = dFirst <= MOUSE_RESUME_HIT_R ? first : last;
+        const snappedAngle = snapAngle(anchor, svgPt);
+        // Preview: angle snap only from chosen endpoint
         setGhost({ x: snappedAngle.x, y: snappedAngle.y });
+        setExtendFrom(dFirst <= MOUSE_RESUME_HIT_R ? 'start' : 'end');
         setIsDrawingActive(true);
         return; // don't commit a point on this resume click
       }
       return; // clicked elsewhere while paused -> ignore
     }
+    // If active and clicking near the opposite endpoint, close and stop drawing
+    if (isDrawingActive && points.length >= 2) {
+      const first = points[0];
+      const last = points[points.length - 1];
+      const dToFirst = Math.hypot(svgPt.x - first.x, svgPt.y - first.y);
+      const dToLast = Math.hypot(svgPt.x - last.x, svgPt.y - last.y);
+      if (extendFrom === 'end' && dToFirst <= MOUSE_RESUME_HIT_R) {
+        setPoints(prev => [...prev, prev[0]]);
+        setGhost(null);
+        setIsDrawingActive(false);
+        return;
+      }
+      if (extendFrom === 'start' && dToLast <= MOUSE_RESUME_HIT_R) {
+        setPoints(prev => [prev[prev.length - 1], ...prev]);
+        setGhost(null);
+        setIsDrawingActive(false);
+        return;
+      }
+    }
     // Snap angle relative to previous point for click commit, then commit directly.
     let next = svgPt;
     if (points.length) {
-      const anchor = points[points.length-1];
+      const anchorIndex = extendFrom === 'start' ? 0 : points.length - 1;
+      const anchor = points[anchorIndex];
       const snappedAngle = snapAngle(anchor, svgPt);
       next = { x: snappedAngle.x, y: snappedAngle.y };
+      // Avoid committing a zero-length segment
+      const { lenMm } = snapLength(next.x - anchor.x, next.y - anchor.y);
+      if (lenMm > 0) {
+        setPoints(p => (extendFrom === 'start' ? [next, ...p] : [...p, next]));
+      }
+    } else {
+      setPoints(p => [...p, next]);
     }
-    setPoints(p => [...p, next]);
     // Clear ghost so the angle arc disappears until mouse moves again (matches legacy behavior)
     setGhost(null);
   }
@@ -450,6 +500,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   function handleClear() {
     setPoints([]);
     setGhost(null);
+    setIsDrawingActive(true)
   }
 
   // Mobile-friendly control: pause (cancel) drawing like pressing ESC
@@ -531,7 +582,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
 
             {/* ghost line, length label & live angle arc */}
             {ghost && points.length > 0 && (() => {
-              const prev = points[points.length-1];
+              const anchorIndex = extendFrom === 'start' ? 0 : points.length - 1;
+              const prev = points[anchorIndex];
               const b = ghost;
               const dx = b.x - prev.x; const dy = b.y - prev.y;
               const { lenMm } = snapLength(dx, dy);
@@ -545,8 +597,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               let arcEl: React.ReactNode = null;
               let angleLabel: React.ReactNode = null;
               if (points.length >= 2) {
-                const prevPrev = points[points.length - 2];
                 const anchor = prev; // vertex point
+                const prevPrev = extendFrom === 'start' ? points[1] : points[points.length - 2];
                 const angleDeg = internalAngle(prevPrev, anchor, b);
                 // Geometry for arc similar to legacy
                 const radius = 45; // svg units (kept constant in world units)
@@ -598,11 +650,19 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                 }
               }
               // Endpoints or straight (180°) joints: keep original point styling
+              const isFirst = i === 0;
               const isLast = i === points.length - 1;
-              const clickableWhilePaused = isLast && !isDrawingActive;
+              const clickableWhilePaused = (isLast || isFirst) && !isDrawingActive;
+              const closable = isDrawingActive && points.length >= 2 && ((extendFrom === 'end' && isFirst) || (extendFrom === 'start' && isLast));
               return (
                 <g key={`pt-${i}`}>
-                  {clickableWhilePaused && <title>Click to resume drawing from here</title>}
+                  {(clickableWhilePaused || closable) && (
+                    <title>{
+                      clickableWhilePaused
+                        ? 'Click to resume drawing from here'
+                        : (extendFrom === 'end' ? 'Click to close: connect last point to the first point' : 'Click to close: connect first point to the last point')
+                    }</title>
+                  )}
                   <circle
                     cx={p.x}
                     cy={p.y}
@@ -610,19 +670,34 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                     fill="#0284c7"
                     stroke="#fff"
                     strokeWidth={scaledSize(2, 1)}
-                    className={clickableWhilePaused ? 'cursor-pointer' : undefined}
+                    className={(clickableWhilePaused || closable) ? 'cursor-pointer' : undefined}
                     onClick={(e) => {
-                      if (!clickableWhilePaused) return;
-                      e.stopPropagation();
-                      // Resume drawing from last point; place ghost toward current mouse position if available
-                      const svg = svgRef.current;
-                      if (!svg) { setIsDrawingActive(true); return; }
-                      const clientX = (e as any).clientX ?? 0;
-                      const clientY = (e as any).clientY ?? 0;
-                      const svgPt = clientToSvg({ clientX, clientY });
-                      const snapped = snapAngle(p, svgPt);
-                      setGhost({ x: snapped.x, y: snapped.y });
-                      setIsDrawingActive(true);
+                      // Priority: if paused and this is an endpoint, resume from here.
+                      if (clickableWhilePaused) {
+                        e.stopPropagation();
+                        const svg = svgRef.current;
+                        if (!svg) { setIsDrawingActive(true); return; }
+                        const clientX = (e as any).clientX ?? 0;
+                        const clientY = (e as any).clientY ?? 0;
+                        const svgPt = clientToSvg({ clientX, clientY });
+                        const snapped = snapAngle(p, svgPt);
+                        setGhost({ x: snapped.x, y: snapped.y });
+                        setExtendFrom(isFirst ? 'start' : 'end');
+                        setIsDrawingActive(true);
+                        return;
+                      }
+                      // If drawing and clicking the opposite endpoint based on current extendFrom, close the path
+                      if (closable) {
+                        e.stopPropagation();
+                        if (extendFrom === 'end' && isFirst) {
+                          setPoints(prev => [...prev, prev[0]]);
+                        } else if (extendFrom === 'start' && isLast) {
+                          setPoints(prev => [prev[prev.length - 1], ...prev]);
+                        }
+                        setGhost(null);
+                        setIsDrawingActive(false);
+                        return;
+                      }
                     }}
                   />
                 </g>
