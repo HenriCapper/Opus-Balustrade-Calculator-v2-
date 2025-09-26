@@ -87,6 +87,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   const panOrigin = useRef<{x:number;y:number;startX:number;startY:number} | null>(null);
   const [runs, setRuns] = useState<CustomRun[]>(value || []);
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
+  const MOUSE_RESUME_HIT_R = 10; // svg units
+  const TOUCH_RESUME_HIT_R = 18; // svg units (bigger hit target)
 
   // derive runs from points whenever points change (except while editing numeric fields manually)
   useEffect(() => {
@@ -178,16 +180,22 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       return;
     }
 
-    // If paused, first touch resumes and shows ghost from last point
+    // If paused, only resume when touching the last point (hit test)
     if (!isDrawingActive && points.length) {
       const svgPt = clientToSvg(e);
-      const snappedAngle = snapAngle(points[points.length-1], svgPt);
-      const { dx, dy } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-      const prev = points[points.length-1];
-      setGhost({ x: prev.x + dx, y: prev.y + dy });
-      setIsDrawingActive(true);
-      // don't start a draw drag yet (user can adjust by moving)
-      setIsDraggingDraw(true);
+      const last = points[points.length - 1];
+      const dxh = svgPt.x - last.x;
+      const dyh = svgPt.y - last.y;
+      const dist = Math.hypot(dxh, dyh);
+      if (dist <= TOUCH_RESUME_HIT_R) {
+        const snappedAngle = snapAngle(last, svgPt);
+        const { dx, dy } = snapLength(snappedAngle.x - last.x, snappedAngle.y - last.y);
+        setGhost({ x: last.x + dx, y: last.y + dy });
+        setIsDrawingActive(true);
+        // don't start a draw drag yet (user can adjust by moving)
+        setIsDraggingDraw(true);
+      }
+      // If not near last point while paused, do nothing (allow pinch/pan only)
       return;
     }
 
@@ -303,14 +311,20 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   function handleClick(e: React.MouseEvent) {
     if (isPanning || e.ctrlKey) return;
     const svgPt = clientToSvg(e);
-    // If drawing is paused (ESC), first click only resumes and shows ghost from last point
+    // If paused, only resume when clicking the last point
     if (!isDrawingActive && points.length) {
-      const snappedAngle = snapAngle(points[points.length-1], svgPt);
-      const { dx, dy } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-      const prev = points[points.length-1];
-      setGhost({ x: prev.x + dx, y: prev.y + dy });
-      setIsDrawingActive(true);
-      return; // don't commit a point on this resume click
+      const last = points[points.length - 1];
+      const dxh = svgPt.x - last.x;
+      const dyh = svgPt.y - last.y;
+      const dist = Math.hypot(dxh, dyh);
+      if (dist <= MOUSE_RESUME_HIT_R) {
+        const snappedAngle = snapAngle(last, svgPt);
+        const { dx, dy } = snapLength(snappedAngle.x - last.x, snappedAngle.y - last.y);
+        setGhost({ x: last.x + dx, y: last.y + dy });
+        setIsDrawingActive(true);
+        return; // don't commit a point on this resume click
+      }
+      return; // clicked elsewhere while paused -> ignore
     }
     // Snap angle & length relative to previous point if exists
     let next = svgPt;
@@ -428,7 +442,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
           onClick={(e) => { e.stopPropagation(); pauseDrawing(); }}
           className={`absolute left-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition active:scale-95 ${isDrawingActive && points.length > 0 ? 'bg-red-600 text-white' : 'bg-slate-300 text-slate-600 opacity-70'}`}
           disabled={!isDrawingActive || points.length === 0}
-          title="Cancel current segment (tap to pause, tap canvas to resume)"
+          title="Cancel current segment (tap to pause, then click/tap the LAST point to resume)"
         >
           ×
         </button>
@@ -445,7 +459,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          className="cursor-crosshair select-none touch-none"
+          className={`${isDrawingActive ? 'cursor-crosshair' : 'cursor-default'} select-none touch-none`}
         >
           {/* background grid via pattern */}
           <defs>
@@ -549,9 +563,35 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                 }
               }
               // Endpoints or straight (180°) joints: keep original point styling
+              const isLast = i === points.length - 1;
+              const clickableWhilePaused = isLast && !isDrawingActive;
               return (
                 <g key={`pt-${i}`}>
-                  <circle cx={p.x} cy={p.y} r={7} fill="#0284c7" stroke="#fff" strokeWidth={2} />
+                  {clickableWhilePaused && <title>Click to resume drawing from here</title>}
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={7}
+                    fill="#0284c7"
+                    stroke="#fff"
+                    strokeWidth={2}
+                    className={clickableWhilePaused ? 'cursor-pointer' : undefined}
+                    onClick={(e) => {
+                      if (!clickableWhilePaused) return;
+                      e.stopPropagation();
+                      // Resume drawing from last point; place ghost toward current mouse position if available
+                      const svg = svgRef.current;
+                      if (!svg) { setIsDrawingActive(true); return; }
+                      const rect = svg.getBoundingClientRect();
+                      const clientX = (e as any).clientX ?? rect.left + (p.x + pan.x) * zoom;
+                      const clientY = (e as any).clientY ?? rect.top + (p.y + pan.y) * zoom;
+                      const svgPt = clientToSvg({ clientX, clientY });
+                      const snapped = snapAngle(p, svgPt);
+                      const { dx, dy } = snapLength(snapped.x - p.x, snapped.y - p.y);
+                      setGhost({ x: p.x + dx, y: p.y + dy });
+                      setIsDrawingActive(true);
+                    }}
+                  />
                 </g>
               );
             })}
