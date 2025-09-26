@@ -81,14 +81,27 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   const [points, setPoints] = useState<Pt[]>(() => []);
   const [ghost, setGhost] = useState<Pt | null>(null);
   const [isDrawingActive, setIsDrawingActive] = useState(true); // ESC cancels, next click resumes
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState<{x:number;y:number}>({ x: 0, y: 0 });
+  // Use legacy-like viewBox zoom/pan so mouse anchoring matches exactly
+  // Start a bit zoomed-in compared to the previous default
+  // Start even more zoomed-in (smaller viewBox for closer view)
+  const [viewBox, setViewBox] = useState<{ x: number; y: number; width: number; height: number }>(() => ({ x: -500, y: -350, width: 900, height: 600 }));
   const [isPanning, setIsPanning] = useState(false);
-  const panOrigin = useRef<{x:number;y:number;startX:number;startY:number} | null>(null);
+  // Track last client position (pixels) for panning deltas
+  const panOrigin = useRef<{ clientX: number; clientY: number } | null>(null);
   const [runs, setRuns] = useState<CustomRun[]>(value || []);
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const MOUSE_RESUME_HIT_R = 10; // svg units
   const TOUCH_RESUME_HIT_R = 18; // svg units (bigger hit target)
+  // Smooth ghost updates
+  const ghostRafId = useRef<number | null>(null);
+  const lastMouseClient = useRef<{ x: number; y: number } | null>(null);
+
+  // Dynamic text sizing for ALL SVG text: grows when zooming out, shrinks when zooming in
+  // Keep this in sync with the initial viewBox.width below (900)
+  const INITIAL_VB_WIDTH = 900;
+  const textScaleAll = Math.min(3, Math.max(0.6, viewBox.width / INITIAL_VB_WIDTH));
+  const scaledFont = (base: number) => Math.max(8, Math.round(base * textScaleAll));
+  const scaledSize = (base: number, min = 0.5) => Math.max(min, base * textScaleAll);
 
   // derive runs from points whenever points change (except while editing numeric fields manually)
   useEffect(() => {
@@ -122,16 +135,32 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // pointer coordinate to svg logical coordinates (pre‑pan/zoom applied as transform)
-  // Accepts any event-like with clientX/clientY (MouseEvent, PointerEvent, React synthetic)
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (ghostRafId.current != null) cancelAnimationFrame(ghostRafId.current);
+      ghostRafId.current = null;
+    };
+  }, []);
+
+  // pointer coordinate to svg logical coordinates using getScreenCTM (matches legacy)
   const clientToSvg = useCallback((evt: { clientX: number; clientY: number }) => {
     const svg = svgRef.current;
-    if (!svg) return { x:0, y:0 };
-    const rect = svg.getBoundingClientRect();
-    const x = (evt.clientX - rect.left) / zoom - pan.x;
-    const y = (evt.clientY - rect.top) / zoom - pan.y;
-    return { x, y };
-  }, [zoom, pan]);
+    if (!svg) return { x: 0, y: 0 };
+    const pt = (svg as any).createSVGPoint ? (svg as any).createSVGPoint() : null;
+    const ctm = svg.getScreenCTM?.();
+    if (!pt || !ctm) {
+      // fallback approximate mapping if CTM unavailable
+      const rect = svg.getBoundingClientRect();
+      const sx = (evt.clientX - rect.left) / rect.width;
+      const sy = (evt.clientY - rect.top) / rect.height;
+      return { x: viewBox.x + sx * viewBox.width, y: viewBox.y + sy * viewBox.height };
+    }
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const svgPt = pt.matrixTransform(ctm.inverse());
+    return { x: svgPt.x, y: svgPt.y };
+  }, [viewBox]);
 
   // Prevent browser page zoom on Ctrl + wheel when over the drawing container (desktop)
   useEffect(() => {
@@ -174,9 +203,12 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       const p2 = pointerPositions.current.get(ids[1])!;
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
       const dist = Math.hypot(dx, dy) || 1;
-      pinchRef.current = { active: true, id1: ids[0], id2: ids[1], startZoom: zoom, startDist: dist };
+      // Store starting viewBox dimensions and start distance
+      pinchRef.current = { active: true, id1: ids[0], id2: ids[1], startZoom: 1, startDist: dist };
       // Stop any drawing drag while pinching
       setIsDraggingDraw(false);
+      // Hide ghost during pinch to avoid misalignment during zoom
+      setGhost(null);
       return;
     }
 
@@ -187,10 +219,9 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       const dxh = svgPt.x - last.x;
       const dyh = svgPt.y - last.y;
       const dist = Math.hypot(dxh, dyh);
-      if (dist <= TOUCH_RESUME_HIT_R) {
-        const snappedAngle = snapAngle(last, svgPt);
-        const { dx, dy } = snapLength(snappedAngle.x - last.x, snappedAngle.y - last.y);
-        setGhost({ x: last.x + dx, y: last.y + dy });
+        if (dist <= TOUCH_RESUME_HIT_R) {
+          // Preview: set ghost to raw cursor world coordinates for perfect alignment
+          setGhost({ x: svgPt.x, y: svgPt.y });
         setIsDrawingActive(true);
         // don't start a draw drag yet (user can adjust by moving)
         setIsDraggingDraw(true);
@@ -219,28 +250,24 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     }
     // Handle pinch zoom if active with two pointers
     if (pinchRef.current.active) {
-      const { id1, id2, startZoom, startDist } = pinchRef.current;
+      const { id1, id2, startDist } = pinchRef.current;
       if (id1 != null && id2 != null && pointerPositions.current.has(id1) && pointerPositions.current.has(id2)) {
         const p1 = pointerPositions.current.get(id1)!;
         const p2 = pointerPositions.current.get(id2)!;
         const dx = p2.x - p1.x, dy = p2.y - p1.y;
         const dist = Math.hypot(dx, dy) || 1;
         const ratio = dist / (startDist || 1);
-        const newZoom = Math.min(5, Math.max(0.5, startZoom * ratio));
-        // Use current center for anchor
+        // Compute new dimensions (zoom in -> smaller width/height)
+        const oldVB = viewBox;
+        const newWidth = Math.min(24000, Math.max(200, oldVB.width / ratio));
+        const newHeight = newWidth * (oldVB.height / oldVB.width);
+        // Anchor around pinch midpoint
         const cx = (p1.x + p2.x) / 2;
         const cy = (p1.y + p2.y) / 2;
-        const svg = svgRef.current;
-        if (svg) {
-          const rect = svg.getBoundingClientRect();
-          const sx = cx - rect.left;
-          const sy = cy - rect.top;
-          // Adjust pan so the world under the center stays fixed while zooming
-          setPan(prev => ({ x: prev.x + sx * (1 / newZoom - 1 / zoom), y: prev.y + sy * (1 / newZoom - 1 / zoom) }));
-          setZoom(newZoom);
-        } else {
-          setZoom(newZoom);
-        }
+        const mouseWorld = clientToSvg({ clientX: cx, clientY: cy });
+        const xPrime = mouseWorld.x - (mouseWorld.x - oldVB.x) * (newWidth / oldVB.width);
+        const yPrime = mouseWorld.y - (mouseWorld.y - oldVB.y) * (newHeight / oldVB.height);
+        setViewBox({ x: xPrime, y: yPrime, width: newWidth, height: newHeight });
       }
       return; // do not draw while pinching
     }
@@ -263,11 +290,9 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     }
     if (!isDrawingActive) return;
     if (!points.length) return;
-    const svgPt = clientToSvg(e);
-    const snappedAngle = snapAngle(points[points.length-1], svgPt);
-    const { dx, dy } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-    const prev = points[points.length-1];
-    setGhost({ x: prev.x + dx, y: prev.y + dy });
+  const svgPt = clientToSvg(e);
+      // Preview: raw position so ghost is under finger
+      setGhost({ x: svgPt.x, y: svgPt.y });
   }
 
   function handlePointerUp(e: React.PointerEvent<SVGSVGElement>) {
@@ -319,21 +344,19 @@ export default function CustomShapeDesigner({ value, onChange, className, height
       const dist = Math.hypot(dxh, dyh);
       if (dist <= MOUSE_RESUME_HIT_R) {
         const snappedAngle = snapAngle(last, svgPt);
-        const { dx, dy } = snapLength(snappedAngle.x - last.x, snappedAngle.y - last.y);
-        setGhost({ x: last.x + dx, y: last.y + dy });
+        // Preview: angle snap only
+        setGhost({ x: snappedAngle.x, y: snappedAngle.y });
         setIsDrawingActive(true);
         return; // don't commit a point on this resume click
       }
       return; // clicked elsewhere while paused -> ignore
     }
-    // Snap angle & length relative to previous point if exists
+    // Snap angle relative to previous point for click commit, then commit directly.
     let next = svgPt;
     if (points.length) {
-      const snappedAngle = snapAngle(points[points.length-1], svgPt);
-      const { dx, dy, lenMm } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-      const prev = points[points.length-1];
-      next = { x: prev.x + dx, y: prev.y + dy };
-      if (lenMm === 0) return; // ignore zero length
+      const anchor = points[points.length-1];
+      const snappedAngle = snapAngle(anchor, svgPt);
+      next = { x: snappedAngle.x, y: snappedAngle.y };
     }
     setPoints(p => [...p, next]);
     // Clear ghost so the angle arc disappears until mouse moves again (matches legacy behavior)
@@ -342,21 +365,35 @@ export default function CustomShapeDesigner({ value, onChange, className, height
 
   function handleMouseMove(e: React.MouseEvent) {
     if (isPanning && panOrigin.current) {
-      const pt = clientToSvg(e);
-      const ox = panOrigin.current.startX;
-      const oy = panOrigin.current.startY;
-      setPan({ x: pt.x - ox, y: pt.y - oy });
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const dxPx = e.clientX - panOrigin.current.clientX;
+      const dyPx = e.clientY - panOrigin.current.clientY;
+      panOrigin.current.clientX = e.clientX;
+      panOrigin.current.clientY = e.clientY;
+      const unitsPerPxX = viewBox.width / rect.width;
+      const unitsPerPxY = viewBox.height / rect.height;
+      setViewBox(prev => ({ ...prev, x: prev.x - dxPx * unitsPerPxX, y: prev.y - dyPx * unitsPerPxY }));
       return;
     }
     // While Ctrl is held (desktop pan gesture), don't update ghost to avoid flicker
     if ((e as any).ctrlKey) return;
     if (!points.length) return;
     if (!isDrawingActive) return; // paused via ESC
-    const svgPt = clientToSvg(e);
-    const snappedAngle = snapAngle(points[points.length-1], svgPt);
-    const { dx, dy } = snapLength(snappedAngle.x - points[points.length-1].x, snappedAngle.y - points[points.length-1].y);
-    const prev = points[points.length-1];
-    setGhost({ x: prev.x + dx, y: prev.y + dy });
+    // Smooth ghost updates via rAF
+    lastMouseClient.current = { x: e.clientX, y: e.clientY };
+    if (ghostRafId.current == null) {
+      ghostRafId.current = requestAnimationFrame(() => {
+        ghostRafId.current = null;
+        if (!lastMouseClient.current) return;
+        if (!isDrawingActive || points.length === 0) return;
+        const { x: cx, y: cy } = lastMouseClient.current;
+        const svgPt = clientToSvg({ clientX: cx, clientY: cy });
+        // Preview: raw cursor world position for exact alignment
+        setGhost({ x: svgPt.x, y: svgPt.y });
+      });
+    }
   }
 
   function startPan(e: React.MouseEvent) {
@@ -364,8 +401,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     e.preventDefault();
     // Hide ghost while panning to prevent flicker
     setGhost(null);
-    const pt = clientToSvg(e);
-    panOrigin.current = { x: pan.x, y: pan.y, startX: pt.x - pan.x, startY: pt.y - pan.y };
+    // Record starting client position
+    panOrigin.current = { clientX: e.clientX, clientY: e.clientY };
     setIsPanning(true);
   }
   function endPan() { setIsPanning(false); panOrigin.current = null; }
@@ -374,18 +411,16 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     if (!e.ctrlKey) return; // ctrl + wheel to zoom
     e.preventDefault();
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    let next = zoom * factor;
-    next = Math.min(5, Math.max(0.5, next));
-    const svg = svgRef.current;
-    if (svg) {
-      const rect = svg.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      // Anchor zoom around cursor position to keep ghost aligned with pointer
-      setPan(prev => ({ x: prev.x + sx * (1 / next - 1 / zoom), y: prev.y + sy * (1 / next - 1 / zoom) }));
-      setZoom(next);
-    } else {
-      setZoom(next);
+    const oldVB = viewBox;
+    const mouseWorld = clientToSvg(e);
+    const newWidth = Math.min(24000, Math.max(200, oldVB.width / factor));
+    const newHeight = newWidth * (oldVB.height / oldVB.width);
+    // Anchor zoom around cursor position (keep same world under cursor)
+    const xPrime = mouseWorld.x - (mouseWorld.x - oldVB.x) * (newWidth / oldVB.width);
+    const yPrime = mouseWorld.y - (mouseWorld.y - oldVB.y) * (newHeight / oldVB.height);
+    setViewBox({ x: xPrime, y: yPrime, width: newWidth, height: newHeight });
+    if (isDrawingActive && points.length > 0) {
+      setGhost({ x: mouseWorld.x, y: mouseWorld.y });
     }
   }
 
@@ -459,6 +494,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
           className={`${isDrawingActive ? 'cursor-crosshair' : 'cursor-default'} select-none touch-none`}
         >
           {/* background grid via pattern */}
@@ -468,7 +504,6 @@ export default function CustomShapeDesigner({ value, onChange, className, height
             </pattern>
           </defs>
           <rect x={-10000} y={-10000} width={20000} height={20000} fill="url(#grid)" />
-          <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
             {/* drawn lines and length labels */}
             {points.map((p, i) => {
               if (i === 0) return null;
@@ -481,15 +516,15 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               // Midpoint for label
               const mx = (a.x + b.x) / 2;
               const my = (a.y + b.y) / 2;
-              // Offset label a bit above the line
-              const labelOffset = 14;
+              // Offset label a bit above the line (scale with zoom for readability)
+              const labelOffset = 14 * textScaleAll;
               const angle = Math.atan2(dy, dx);
               const lx = mx + labelOffset * Math.sin(angle);
               const ly = my - labelOffset * Math.cos(angle);
               return (
                 <g key={i}>
                   <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
-                  <text x={lx} y={ly} textAnchor="middle" fontSize={14} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{`${String.fromCharCode(65 + (i-1))}: ${lenMm} mm`}</text>
+                  <text x={lx} y={ly} textAnchor="middle" fontSize={scaledFont(18)} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{`${String.fromCharCode(65 + (i-1))}: ${lenMm} mm`}</text>
                 </g>
               );
             })}
@@ -501,7 +536,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               const dx = b.x - prev.x; const dy = b.y - prev.y;
               const { lenMm } = snapLength(dx, dy);
               const mx = (prev.x + b.x)/2; const my = (prev.y + b.y)/2;
-              const labelOffset = 14;
+              const labelOffset = 14 * textScaleAll;
               const angLine = Math.atan2(dy, dx);
               const lx = mx + labelOffset * Math.sin(angLine);
               const ly = my - labelOffset * Math.cos(angLine);
@@ -514,7 +549,7 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                 const anchor = prev; // vertex point
                 const angleDeg = internalAngle(prevPrev, anchor, b);
                 // Geometry for arc similar to legacy
-                const radius = 45; // svg units
+                const radius = 45; // svg units (kept constant in world units)
                 const startAngle = Math.atan2(prevPrev.y - anchor.y, prevPrev.x - anchor.x);
                 const endAngle = Math.atan2(b.y - anchor.y, b.x - anchor.x);
                 let diff = endAngle - startAngle;
@@ -532,13 +567,13 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                 const labelR = radius + 18;
                 const ax = anchor.x + labelR * Math.cos(midAngle);
                 const ay = anchor.y + labelR * Math.sin(midAngle) + 4;
-                angleLabel = <text x={ax} y={ay} fontSize={14} fontFamily="system-ui" fontWeight={600} fill="#0369a1" textAnchor="middle">{angleDeg}&deg;</text>;
+                angleLabel = <text x={ax} y={ay} fontSize={scaledFont(16)} fontFamily="system-ui" fontWeight={600} fill="#0369a1" textAnchor="middle">{angleDeg}&deg;</text>;
               }
 
               return (
                 <>
                   <line x1={prev.x} y1={prev.y} x2={b.x} y2={b.y} stroke="#0369a1" strokeDasharray="6 6" strokeWidth={2} />
-                  <text x={lx} y={ly} textAnchor="middle" fontSize={14} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{lenMm} mm</text>
+                  <text x={lx} y={ly} textAnchor="middle" fontSize={scaledFont(18)} fill="#0369a1" fontFamily="system-ui" fontWeight={600}>{lenMm} mm</text>
                   {arcEl}
                   {angleLabel}
                 </>
@@ -556,8 +591,8 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                   return (
                     <g key={`pt-${i}`}>
                       {/* Angle badge exactly on the point */}
-                      <circle cx={p.x} cy={p.y} r={14} fill={fill} stroke="#ffffff" strokeWidth={3} />
-                      <text x={p.x} y={p.y+4} fontSize={11} fontFamily="system-ui" fontWeight={700} fill="#ffffff" textAnchor="middle">{ang}&deg;</text>
+                      <circle cx={p.x} cy={p.y} r={scaledSize(14)} fill={fill} stroke="#ffffff" strokeWidth={scaledSize(3, 1)} />
+                      <text x={p.x} y={p.y+4} fontSize={scaledFont(13)} fontFamily="system-ui" fontWeight={700} fill="#ffffff" textAnchor="middle">{ang}&deg;</text>
                     </g>
                   );
                 }
@@ -571,10 +606,10 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                   <circle
                     cx={p.x}
                     cy={p.y}
-                    r={7}
+                    r={scaledSize(7)}
                     fill="#0284c7"
                     stroke="#fff"
-                    strokeWidth={2}
+                    strokeWidth={scaledSize(2, 1)}
                     className={clickableWhilePaused ? 'cursor-pointer' : undefined}
                     onClick={(e) => {
                       if (!clickableWhilePaused) return;
@@ -582,20 +617,17 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                       // Resume drawing from last point; place ghost toward current mouse position if available
                       const svg = svgRef.current;
                       if (!svg) { setIsDrawingActive(true); return; }
-                      const rect = svg.getBoundingClientRect();
-                      const clientX = (e as any).clientX ?? rect.left + (p.x + pan.x) * zoom;
-                      const clientY = (e as any).clientY ?? rect.top + (p.y + pan.y) * zoom;
+                      const clientX = (e as any).clientX ?? 0;
+                      const clientY = (e as any).clientY ?? 0;
                       const svgPt = clientToSvg({ clientX, clientY });
                       const snapped = snapAngle(p, svgPt);
-                      const { dx, dy } = snapLength(snapped.x - p.x, snapped.y - p.y);
-                      setGhost({ x: p.x + dx, y: p.y + dy });
+                      setGhost({ x: snapped.x, y: snapped.y });
                       setIsDrawingActive(true);
                     }}
                   />
                 </g>
               );
             })}
-          </g>
         </svg>
         <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-slate-800/80 px-2 py-1 text-[10px] font-medium text-white">Ctrl + wheel: zoom • Middle drag or Ctrl+Drag: pan • Esc: cancel</div>
       </div>
