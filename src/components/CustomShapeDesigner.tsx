@@ -21,7 +21,7 @@ export interface CustomRun {
   length: number;    // mm (snapped)
   dx: number;        // mm delta x (plan view)
   dy: number;        // mm delta y (plan view)
-  gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean };
+  gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number };
 }
 
 export interface CustomShapeDesignerProps {
@@ -93,7 +93,11 @@ export default function CustomShapeDesigner({ value, onChange, className, height
   const panOrigin = useRef<{ clientX: number; clientY: number } | null>(null);
   const [runs, setRuns] = useState<CustomRun[]>(value || []);
   // Gate state per run id (A, B, C...)
-  const [gateById, setGateById] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }>>({});
+  const [gateById, setGateById] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number }>>({});
+  // Gate drag state
+  const [dragGate, setDragGate] = useState<null | { id: string; segIndex: number; pointerId: number | null }>(null);
+  // Dragging a new gate from the palette
+  const [dragNewGate, setDragNewGate] = useState<null | { pointerId: number | null; over: null | { segIndex: number; t: number; hingeOnLeft: boolean } }>(null);
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const MOUSE_RESUME_HIT_R = 10; // svg units
   const TOUCH_RESUME_HIT_R = 18; // svg units (bigger hit target)
@@ -498,15 +502,98 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     });
   }
 
-  // Gate handlers in list UI
-  function toggleGateFor(id: string, enabled: boolean) {
-    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { position: 'middle' as const, hingeOnLeft: false }), enabled } }));
+  // Gate controls are handled on-canvas via drag/drop and double-click to flip hinge.
+
+  // Gate helpers for drag placement
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  function setGateT(id: string, t: number) {
+    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, position: 'middle' as const }), t: clamp01(t) } }));
   }
-  function setGatePosition(id: string, position: 'left'|'middle'|'right') {
-    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, hingeOnLeft: false }), position } }));
+  function handleGatePointerDown(e: React.PointerEvent, id: string, segIndex: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    const target = e.currentTarget as SVGElement;
+    try { (target as any).setPointerCapture?.(e.pointerId); } catch {}
+    setDragGate({ id, segIndex, pointerId: (e as any).pointerId ?? null });
+    // Pause drawing interactions while dragging a gate
+    setGhost(null);
+    setIsDrawingActive(false);
   }
-  function setGateHinge(id: string, hinge: 'left'|'right') {
-    setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, position: 'middle' as const }), hingeOnLeft: hinge === 'left' } }));
+  function handleGatePointerMove(e: React.PointerEvent) {
+    if (!dragGate) return;
+    e.stopPropagation();
+    const { id, segIndex } = dragGate;
+    if (segIndex + 1 >= points.length) return;
+    const a = points[segIndex];
+    const b = points[segIndex + 1];
+    const m = clientToSvg({ clientX: (e as any).clientX ?? 0, clientY: (e as any).clientY ?? 0 });
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const len2 = abx*abx + aby*aby || 1;
+    let t = ((m.x - a.x) * abx + (m.y - a.y) * aby) / len2;
+    // Keep a small margin from the ends so the arc doesn't overlap joints
+    const margin = 0.06; // 6%
+    t = Math.max(margin, Math.min(1 - margin, t));
+    setGateT(id, t);
+  }
+  function handleGatePointerUp(e: React.PointerEvent) {
+    if (!dragGate) return;
+    e.stopPropagation();
+    const target = e.currentTarget as SVGElement;
+    try { (target as any).releasePointerCapture?.(dragGate.pointerId as any); } catch {}
+    setDragGate(null);
+  }
+
+  // Utilities to find nearest segment to a world point
+  function nearestSegment(pt: Pt): { segIndex: number; t: number; dist: number; hingeOnLeft: boolean } | null {
+    if (points.length < 2) return null;
+    let best: { segIndex: number; t: number; dist: number; hingeOnLeft: boolean } | null = null;
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const apx = pt.x - a.x, apy = pt.y - a.y;
+      const len2 = abx*abx + aby*aby || 1;
+      let t = (apx * abx + apy * aby) / len2;
+      const margin = 0.06; // keep small margin from ends
+      t = Math.max(margin, Math.min(1 - margin, t));
+      const px = a.x + abx * t;
+      const py = a.y + aby * t;
+      const d = Math.hypot(pt.x - px, pt.y - py);
+      const cross = abx * (pt.y - a.y) - aby * (pt.x - a.x);
+      const hingeOnLeft = cross > 0; // if pointer is on left side of seg
+      if (!best || d < best.dist) best = { segIndex: i, t, dist: d, hingeOnLeft };
+    }
+    return best;
+  }
+
+  // Drag a new gate from the palette
+  function handlePalettePointerDown(e: React.PointerEvent) {
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    try { (target as any).setPointerCapture?.((e as any).pointerId); } catch {}
+    setDragNewGate({ pointerId: (e as any).pointerId ?? null, over: null });
+    setGhost(null);
+    setIsDrawingActive(false);
+  }
+  function handlePalettePointerMove(e: React.PointerEvent) {
+    if (!dragNewGate) return;
+    const m = clientToSvg({ clientX: (e as any).clientX ?? 0, clientY: (e as any).clientY ?? 0 });
+    const hit = nearestSegment(m);
+    if (!hit) { setDragNewGate(prev => prev ? { ...prev, over: null } : prev); return; }
+    const MAX_DIST = 40; // world units threshold for snapping
+    if (hit.dist > MAX_DIST) { setDragNewGate(prev => prev ? { ...prev, over: null } : prev); return; }
+    setDragNewGate(prev => prev ? { ...prev, over: { segIndex: hit.segIndex, t: hit.t, hingeOnLeft: hit.hingeOnLeft } } : prev);
+  }
+  function handlePalettePointerUp(e: React.PointerEvent) {
+    if (!dragNewGate) return;
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    try { (target as any).releasePointerCapture?.(dragNewGate.pointerId as any); } catch {}
+    const over = dragNewGate.over;
+    setDragNewGate(null);
+    if (!over) return; // not dropped close to a side
+    const id = String.fromCharCode(65 + over.segIndex);
+    setGateById(prev => ({ ...prev, [id]: { enabled: true, position: 'middle', hingeOnLeft: over.hingeOnLeft, t: over.t } }));
   }
 
   function handleUndo() {
@@ -570,6 +657,33 @@ export default function CustomShapeDesigner({ value, onChange, className, height
             </pattern>
           </defs>
           <rect x={-10000} y={-10000} width={20000} height={20000} fill="url(#grid)" />
+          {/* Preview a gate while dragging from palette (snaps to nearest side) */}
+          {dragNewGate?.over && points.length >= 2 && (() => {
+            const { segIndex, t, hingeOnLeft } = dragNewGate.over!;
+            const a = points[segIndex];
+            const b = points[segIndex + 1];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const gx = a.x + dx * t;
+            const gy = a.y + dy * t;
+            const tx = dx / len, ty = dy / len;
+            const nx = -ty, ny = tx;
+            const side = hingeOnLeft ? 1 : -1;
+            const stub = 30;
+            const radius = 60;
+            const hx1 = gx, hy1 = gy;
+            const hx2 = gx + nx * side * stub, hy2 = gy + ny * side * stub;
+            const startAngle = Math.atan2(hy2 - hy1, hx2 - hx1);
+            const endAngle = startAngle + (-side) * (Math.PI/2);
+            const arcD = `M ${hx1 + Math.cos(startAngle) * radius} ${hy1 + Math.sin(startAngle) * radius} A ${radius} ${radius} 0 0 ${side > 0 ? 0 : 1} ${hx1 + Math.cos(endAngle) * radius} ${hy1 + Math.sin(endAngle) * radius}`;
+            return (
+              <g pointerEvents="none" opacity={0.9}>
+                <line x1={hx1} y1={hy1} x2={hx2} y2={hy2} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
+                <path d={arcD} stroke="#0f172a" strokeWidth={2} fill="none" strokeDasharray="6 6" />
+                <circle cx={gx} cy={gy} r={scaledSize(6)} fill="#10b981" stroke="#ffffff" strokeWidth={scaledSize(2,1)} />
+              </g>
+            );
+          })()}
             {/* drawn lines and length labels */}
             {points.map((p, i) => {
               if (i === 0) return null;
@@ -590,24 +704,71 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               return (
                 <g key={i}>
                   <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
-                  {/* Gate marker if enabled for this run */}
+                  {/* Gate glyph (draggable) if enabled for this run */}
                   {(() => {
                     const id = String.fromCharCode(65 + (i-1));
                     const cfg = gateById[id];
                     if (!cfg?.enabled) return null;
-                    // Place marker based on position selection: left/middle/right
-                    let t = 0.5; // middle
-                    if (cfg.position === 'left') t = 0.2;
-                    if (cfg.position === 'right') t = 0.8;
+                    // Position along segment
+                    let t = typeof cfg.t === 'number' ? cfg.t : (cfg.position === 'left' ? 0.2 : cfg.position === 'right' ? 0.8 : 0.5);
                     const gx = a.x + (b.x - a.x) * t;
                     const gy = a.y + (b.y - a.y) * t;
-                    const w = 50 * textScaleAll; const h = 18 * textScaleAll;
+                    // Tangent and normals
+                    const len = Math.hypot(dx, dy) || 1;
+                    const tx = dx / len, ty = dy / len;
+                    // Left-hand normal
+                    const nx = -ty, ny = tx;
+                    const hingeLeft = !!cfg.hingeOnLeft;
+                    const side = hingeLeft ? 1 : -1; // 1 => left, -1 => right
+                    const stub = 30; // door thickness indicator (svg units)
+                    const radius = 60; // swing radius (svg units)
+                    const hx1 = gx; const hy1 = gy; // hinge at line
+                    const hx2 = gx + nx * side * stub; const hy2 = gy + ny * side * stub; // closed door tip
+                    // Arc center at hinge point
+                    const startAngle = Math.atan2(hy2 - hy1, hx2 - hx1);
+                    const endAngle = startAngle + (-side) * (Math.PI/2); // 90° swing
+                    // For path arc we want a quarter circle around hinge
+                    const arcD = `M ${hx1 + Math.cos(startAngle) * radius} ${hy1 + Math.sin(startAngle) * radius} A ${radius} ${radius} 0 0 ${side > 0 ? 0 : 1} ${hx1 + Math.cos(endAngle) * radius} ${hy1 + Math.sin(endAngle) * radius}`;                
                     return (
-                      <g>
-                        <rect x={gx - w/2} y={gy - h/2} width={w} height={h} fill="#16a34a" rx={3} ry={3} opacity={0.9} />
-                        <text x={gx} y={gy + 4 * textScaleAll} textAnchor="middle" fontSize={scaledFont(12)} fill="#ffffff" fontFamily="system-ui" fontWeight={700}>
-                          Gate
-                        </text>
+                      <g
+                        style={{ cursor: 'grab' }}
+                        onPointerDown={(e)=>handleGatePointerDown(e, id, i-1)}
+                        onPointerMove={handleGatePointerMove}
+                        onPointerUp={handleGatePointerUp}
+                        onClick={(e)=> e.stopPropagation()}
+                      >
+                        {/* Hinge marker */}
+                        <line x1={hx1} y1={hy1} x2={hx2} y2={hy2} stroke="#0f172a" strokeWidth={3} strokeLinecap="round" />
+                        {/* Swing arc */}
+                        <path d={arcD} stroke="#0f172a" strokeWidth={2} fill="none" strokeDasharray="6 6" />
+                        {/* Drag handle dot */}
+                        <circle cx={gx} cy={gy} r={scaledSize(6)} fill="#10b981" stroke="#ffffff" strokeWidth={scaledSize(2,1)} />
+                        {/* Delete small control */}
+                        {(() => {
+                          const delR = radius + 18;
+                          const delX = hx1 + Math.cos((startAngle + endAngle)/2) * delR;
+                          const delY = hy1 + Math.sin((startAngle + endAngle)/2) * delR;
+                          const R = scaledSize(12); // bigger visible button
+                          const RHIT = R + scaledSize(6); // larger hit target
+                          return (
+                            <g
+                              transform={`translate(${delX}, ${delY})`}
+                              style={{ cursor: 'pointer' }}
+                              onPointerDown={(e)=>{
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setGateById(prev => { const next = { ...prev }; delete next[id]; return next; });
+                              }}
+                            >
+                              {/* Larger invisible hit area for easier tapping */}
+                              <circle r={RHIT} fill="transparent" />
+                              <circle r={R} fill="#ef4444" stroke="#ffffff" strokeWidth={scaledSize(2,1)} />
+                              <text y={4} textAnchor="middle" fontSize={scaledFont(14)} fontFamily="system-ui" fontWeight={800} fill="#ffffff">×</text>
+                            </g>
+                          );
+                        })()}
+                        {/* Toggle hinge by double-clicking near hinge line */}
+                        <rect x={Math.min(hx1,hx2)-6} y={Math.min(hy1,hy2)-6} width={Math.abs(hx2-hx1)+12} height={Math.abs(hy2-hy1)+12} fill="transparent" onDoubleClick={(e)=>{ e.stopPropagation(); setGateById(prev => ({ ...prev, [id]: { ...(prev[id] || { enabled: true, position: 'middle', t: 0.5 }), hingeOnLeft: !prev[id]?.hingeOnLeft } })); }} />
                       </g>
                     );
                   })()}
@@ -740,6 +901,23 @@ export default function CustomShapeDesigner({ value, onChange, className, height
               );
             })}
         </svg>
+        {/* Palette: drag this icon to place a gate on a side */}
+        <div className="absolute bottom-2 left-2 z-10 flex items-center gap-2">
+          <div className="rounded-md border border-slate-300 bg-white/90 px-2 py-1 text-[10px] text-slate-600">Drag gate onto a side</div>
+          <svg
+            width={36}
+            height={36}
+            className="rounded-full bg-white shadow cursor-grab active:cursor-grabbing"
+            onPointerDown={handlePalettePointerDown}
+            onPointerMove={handlePalettePointerMove}
+            onPointerUp={handlePalettePointerUp}
+          >
+            <g transform="translate(18,18)">
+              <line x1="0" y1="0" x2="0" y2="-9" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M 0 -9 A 14 14 0 0 0 14 0" fill="none" stroke="#0f172a" strokeWidth="2" strokeDasharray="4 3" />
+            </g>
+          </svg>
+        </div>
         <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-slate-800/80 px-2 py-1 text-[10px] font-medium text-white">Ctrl + wheel: zoom • Middle drag or Ctrl+Drag: pan • Esc: cancel</div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-3">
@@ -759,40 +937,6 @@ export default function CustomShapeDesigner({ value, onChange, className, height
                   step={5}
                   onChange={(e)=>handleLengthEdit(i, e.target.value)}
                 />
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-600">
-                    <input
-                      type="checkbox"
-                      className="h-3 w-3 accent-sky-600"
-                      checked={!!gateById[r.id]?.enabled}
-                      onChange={(e)=> toggleGateFor(r.id, e.target.checked)}
-                    />
-                    Gate?
-                  </label>
-                  {!!gateById[r.id]?.enabled && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] text-slate-600">Pos</label>
-                      <select
-                        value={gateById[r.id]?.position || 'middle'}
-                        onChange={(e)=> setGatePosition(r.id, e.target.value as any)}
-                        className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
-                      >
-                        <option value="left">Left</option>
-                        <option value="middle">Middle</option>
-                        <option value="right">Right</option>
-                      </select>
-                      <label className="text-[10px] text-slate-600">Hinge</label>
-                      <select
-                        value={(gateById[r.id]?.hingeOnLeft ? 'left' : 'right')}
-                        onChange={(e)=> setGateHinge(r.id, e.target.value as any)}
-                        className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
-                      >
-                        <option value="left">Left</option>
-                        <option value="right">Right</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
               </div>
             ))}
           </div>

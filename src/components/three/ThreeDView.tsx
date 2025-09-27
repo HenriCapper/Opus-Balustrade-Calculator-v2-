@@ -137,31 +137,114 @@ export default function ThreeDView() {
     const newLayouts: { panelWidths:number[]; gap:number; adjustedLength:number;}[] = [];
     const allPanels: number[] = [];
     if (ps1 && sideRuns.length) {
-      sideRuns.forEach((len:number) => {
-        // Try legacy findBestLayout with constraint; fallback to symmetric
-        const layout = findBestLayout(
-          len,
-          gapMin,
-          gapMax,
-          cap,
-          panelStep,
-          { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-          maxSpigotsPerPanel,
-          allowMixed
-        ) || solveSymmetric(
-          len,
-          gapMin,
-          gapMax,
-          cap,
-          panelStep,
-          { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-          maxSpigotsPerPanel
-        );
-        if (layout) {
-          newLayouts.push(layout);
-          allPanels.push(...layout.panelWidths);
+  // 1) Try to lock a common panel width per opposing side group so panel joints align
+  //    across each pair (even indices together, odd indices together). This lets long
+  //    sides (often the even group) use a wider width for 3 spigots without being capped
+  //    by the shorter sides. We search from the effective maximum allowed width downward
+  //    in panelStep increments and pick the first width that yields a valid gap for all
+  //    sides in that group. If a group fails, we fall back to the per-side solver.
+      const spigotConstrainedWidth = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
+      const effectiveMaxWidth = Math.min(cap, spigotConstrainedWidth);
+      const snapDown = (w:number) => Math.floor(w / (panelStep || 1)) * (panelStep || 1);
+      const canSolveWithWidth = (L:number, W:number): {cnt:number; gap:number} | null => {
+        // Find smallest count (fewest panels) such that gap in [gapMin, gapMax]
+        // Using inequalities to bound cnt quickly
+        const step = 1;
+        let cnt = Math.max(1, Math.ceil((L - gapMax) / (W + gapMax)));
+        const cntMax = Math.max(cnt, Math.floor((L - gapMin) / (W + gapMin)));
+        for (; cnt <= Math.min(600, cntMax); cnt += step) {
+          const gap = (L - cnt * W) / (cnt + 1);
+          if (gap >= gapMin && gap <= gapMax) return { cnt, gap };
         }
-      });
+        return null;
+      };
+
+      const groups: number[][] = [[], []];
+      sideRuns.forEach((_, i) => groups[i % 2].push(i));
+
+      const groupWidth: (number | null)[] = [null, null];
+      for (let gi = 0; gi < groups.length; gi++) {
+        const indices = groups[gi];
+        if (indices.length === 0) continue;
+        let chosen: number | null = null;
+        for (let W = snapDown(effectiveMaxWidth); W >= 200; W -= (panelStep || 1)) {
+          const actualSpigots = Math.max(2, Math.ceil((W - 2 * ps1.edge) / ps1.internal) + 1);
+          if (actualSpigots > maxSpigotsPerPanel) continue;
+          const feasible = indices.every(i => !!canSolveWithWidth(sideRuns[i], W));
+          if (feasible) { chosen = W; break; }
+        }
+        groupWidth[gi] = chosen;
+      }
+
+      const fallBackToPerSide = groupWidth.every(w => w == null);
+
+      if (!fallBackToPerSide) {
+        // Build layouts using the group's width when available; if a group has no common
+        // width, fall back to per-side solver just for those indices
+        sideRuns.forEach((len:number, idx:number) => {
+          const gi = idx % 2;
+          const W = groupWidth[gi];
+          if (W != null) {
+            const solved = canSolveWithWidth(len, W);
+            if (solved) {
+              const { cnt, gap } = solved;
+              const layout = { panelWidths: Array(cnt).fill(W), gap, adjustedLength: len };
+              newLayouts.push(layout);
+              allPanels.push(...layout.panelWidths);
+              return;
+            }
+          }
+          // Per-side fallback for this particular side
+          const layout = findBestLayout(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel,
+            allowMixed
+          ) || solveSymmetric(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel
+          );
+          if (layout) {
+            newLayouts.push(layout);
+            allPanels.push(...layout.panelWidths);
+          }
+        });
+      } else {
+        // Fallback: Try legacy findBestLayout per side (previous behavior)
+        sideRuns.forEach((len:number) => {
+          const layout = findBestLayout(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel,
+            allowMixed
+          ) || solveSymmetric(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel
+          );
+          if (layout) {
+            newLayouts.push(layout);
+            allPanels.push(...layout.panelWidths);
+          }
+        });
+      }
     }
     // Aggregate with actual spigot count (should equal forced)
     if (ps1 && allPanels.length) {

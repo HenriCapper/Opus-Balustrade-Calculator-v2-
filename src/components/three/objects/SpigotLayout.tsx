@@ -179,12 +179,11 @@ export function SpigotLayout(props: ComponentProps<"group">) {
         panelWidths.forEach((w, j) => {
           // Insert gate slot at the correct panel index (after panelIndex)
           if (gate && gate.enabled && !gateInserted && j === gate.panelIndex) {
-            // Insert a gate block (skip 905mm, don't render a panel for it)
-            // const gateStart = cursor;
-            // const midLocal = seg.dir.clone().multiplyScalar(gateStart + GATE_TOTAL_WIDTH / 2);
-            // const mid = seg.start.clone().add(midLocal);
-            // Optionally: could push a special mesh for the gate, but for now just skip panel
-            // Advance cursor by gate width
+            // If we have an explicit mm start (from designer mapping), align cursor
+            if (typeof (gate as any).gateStartMm === 'number') {
+              cursor = (gate as any).gateStartMm as number;
+            }
+            // Advance by the gate width (we don't draw the gate panel here)
             cursor += GATE_TOTAL_WIDTH;
             gateInserted = true;
           }

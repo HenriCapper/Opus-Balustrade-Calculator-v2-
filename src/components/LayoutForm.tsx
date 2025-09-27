@@ -194,7 +194,7 @@ export default function LayoutForm() {
   // Track side lengths (A-D) for current shape (only the first N used)
   const [sideLengths, setSideLengths] = useState<number[]>([0,0,0,0]);
   // Custom shape dynamic runs (A,B,C,...)
-  const [customRuns, setCustomRuns] = useState<{id:string; length:number; dx:number; dy:number; gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }}[]>([]);
+  const [customRuns, setCustomRuns] = useState<{id:string; length:number; dx:number; dy:number; gate?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number }}[]>([]);
   // Gate controls
   // For standard shapes A-D: track gate per side and simple position (left/middle/right)
   const [sideGates, setSideGates] = useState<{ enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }[]>([
@@ -204,7 +204,7 @@ export default function LayoutForm() {
     { enabled: false, position: 'middle', hingeOnLeft: false },
   ]);
   // For custom shapes, allow one gate per run initially (can extend later)
-  const [customGateByRun, setCustomGateByRun] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }>>({});
+  const [customGateByRun, setCustomGateByRun] = useState<Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number }>>({});
 
   // Keep custom gate map in sync when designer supplies gate values on runs
   useEffect(() => {
@@ -212,14 +212,21 @@ export default function LayoutForm() {
       setCustomGateByRun({});
       return;
     }
-    setCustomGateByRun(prev => {
-      const next: Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }> = {};
+    // Designer is source of truth: if a run has no gate, disable it (don't preserve old state)
+    setCustomGateByRun(() => {
+      const next: Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number }> = {};
       for (const r of customRuns) {
-        const existing = prev[r.id];
-        const incoming = r.gate;
-        if (incoming) next[r.id] = { enabled: !!incoming.enabled, position: incoming.position || 'middle', hingeOnLeft: !!incoming.hingeOnLeft };
-        else if (existing) next[r.id] = existing; // preserve manual settings from form
-        else next[r.id] = { enabled: false, position: 'middle' };
+        const g = r.gate;
+        if (g && g.enabled) {
+          next[r.id] = {
+            enabled: true,
+            position: g.position || 'middle',
+            hingeOnLeft: !!g.hingeOnLeft,
+            t: typeof g.t === 'number' ? g.t : undefined,
+          };
+        } else {
+          next[r.id] = { enabled: false, position: 'middle' };
+        }
       }
       return next;
     });
@@ -381,18 +388,45 @@ export default function LayoutForm() {
         if (layout.panelWidths && layout.panelWidths.length) allPanels.push(...layout.panelWidths);
         // Record gate render info for SideVisuals
         if (hasGate) {
-          // position: left -> first quarter; right -> last quarter; middle -> center
           const total = layout.panelWidths.length;
+          // Map designer t to mm along the run and choose nearest boundary (leading gap or between panels)
           let pIndex = Math.floor(total / 2);
-          const pos = shape === 'custom'
-            ? (customRuns[idx]?.id ? (customGateByRun[customRuns[idx].id]?.position || 'middle') : 'middle')
-            : (sideGates[idx]?.position || 'middle');
-          if (pos === 'left') pIndex = 0;
-          if (pos === 'right') pIndex = Math.max(0, total - 1);
+          let gateStartMm: number | undefined = undefined;
+          if (shape === 'custom') {
+            const runId = customRuns[idx]?.id;
+            const meta = runId ? customGateByRun[runId] : undefined;
+            if (meta) {
+              const len = baseSideArray[idx] || 0;
+              const target = typeof meta.t === 'number' ? Math.max(0, Math.min(1, meta.t)) * len : NaN;
+              // accumulate gap boundaries: start at leading gap, then add panel+gap per panel
+              let cursor = layout.gap;
+              let bestJ = 0;
+              let bestDist = Number.POSITIVE_INFINITY;
+              for (let j = 0; j < total; j++) {
+                const d = isNaN(target) ? Number.POSITIVE_INFINITY : Math.abs(cursor - target);
+                if (d < bestDist) { bestDist = d; bestJ = j; gateStartMm = cursor; }
+                cursor += layout.panelWidths[j] + layout.gap;
+              }
+              pIndex = bestJ;
+              // Fallback to position if t missing
+              if (gateStartMm === undefined) {
+                const pos = meta.position || 'middle';
+                if (pos === 'left') { pIndex = 0; gateStartMm = layout.gap; }
+                else if (pos === 'right') { pIndex = Math.max(0, total - 1); gateStartMm = layout.gap + layout.panelWidths.slice(0, pIndex).reduce((a,b)=>a+b,0) + layout.gap * pIndex; }
+                else { pIndex = Math.floor(total/2); gateStartMm = layout.gap + layout.panelWidths.slice(0, pIndex).reduce((a,b)=>a+b,0) + layout.gap * pIndex; }
+              }
+            }
+          } else {
+            const pos = sideGates[idx]?.position || 'middle';
+            if (pos === 'left') pIndex = 0;
+            else if (pos === 'right') pIndex = Math.max(0, total - 1);
+            // Compute corresponding start mm for consistency
+            gateStartMm = layout.gap + layout.panelWidths.slice(0, pIndex).reduce((a,b)=>a+b,0) + layout.gap * pIndex;
+          }
           const hingeOnLeft = shape === 'custom'
             ? !!(customRuns[idx]?.id && customGateByRun[customRuns[idx].id!]?.hingeOnLeft)
             : !!sideGates[idx]?.hingeOnLeft;
-          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft };
+          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft, gateStartMm: gateStartMm } as any;
         } else {
           sideGatesRender[idx] = { enabled: false, panelIndex: 0, hingeOnLeft: false };
         }
