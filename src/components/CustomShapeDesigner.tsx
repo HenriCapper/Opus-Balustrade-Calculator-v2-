@@ -600,9 +600,14 @@ export default function CustomShapeDesigner({ value, onChange, className, height
     setPoints(prev => prev.slice(0, -1));
   }
   function handleClear() {
+    // Reset everything to a fresh state: points, gates, and drag states
     setPoints([]);
     setGhost(null);
-    setIsDrawingActive(true)
+    setIsDrawingActive(true);
+    setExtendFrom('end');
+    setGateById({});
+    setDragGate(null);
+    setDragNewGate(null);
   }
 
   // Mobile-friendly control: pause (cancel) drawing like pressing ESC
