@@ -159,26 +159,64 @@ export default function ThreeDView() {
         return null;
       };
 
-      const groups: number[][] = [[], []];
-      sideRuns.forEach((_, i) => groups[i % 2].push(i));
+  const groups: number[][] = [[], []];
+  sideRuns.forEach((_, i) => groups[i % 2].push(i));
 
       const groupWidth: (number | null)[] = [null, null];
       for (let gi = 0; gi < groups.length; gi++) {
         const indices = groups[gi];
         if (indices.length === 0) continue;
         let chosen: number | null = null;
-        for (let W = snapDown(effectiveMaxWidth); W >= 200; W -= (panelStep || 1)) {
-          const actualSpigots = Math.max(2, Math.ceil((W - 2 * ps1.edge) / ps1.internal) + 1);
-          if (actualSpigots > maxSpigotsPerPanel) continue;
-          const feasible = indices.every(i => !!canSolveWithWidth(sideRuns[i], W));
-          if (feasible) { chosen = W; break; }
+
+        // Heuristic for custom shapes: derive width from the LONGEST side in the group
+        // so short sides don't dictate an excessively small common width.
+  const isCustom = String((input as any).shape || '').toLowerCase().includes('custom');
+        if (isCustom) {
+          const longestIdx = indices.slice().sort((a,b)=> sideRuns[b] - sideRuns[a])[0];
+          const len = sideRuns[longestIdx];
+          // Solve per-side with constraint to get its natural widest width
+          const layoutLongest = findBestLayout(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel,
+            allowMixed
+          ) || solveSymmetric(
+            len,
+            gapMin,
+            gapMax,
+            cap,
+            panelStep,
+            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
+            maxSpigotsPerPanel
+          );
+          if (layoutLongest && layoutLongest.panelWidths.length) {
+            const wCandidate = snapDown(Math.min(effectiveMaxWidth, Math.max(...layoutLongest.panelWidths)));
+            const actualSpigots = Math.max(2, Math.ceil((wCandidate - 2 * ps1.edge) / ps1.internal) + 1);
+            if (wCandidate >= 200 && actualSpigots <= maxSpigotsPerPanel) {
+              chosen = wCandidate;
+            }
+          }
+        }
+        // Non-custom or fallback: search downward like before with relaxed feasibility rule
+        if (chosen == null) {
+          for (let W = snapDown(effectiveMaxWidth); W >= 200; W -= (panelStep || 1)) {
+            const actualSpigots = Math.max(2, Math.ceil((W - 2 * ps1.edge) / ps1.internal) + 1);
+            if (actualSpigots > maxSpigotsPerPanel) continue;
+            const feasibleCount = indices.reduce((acc,i)=> acc + (canSolveWithWidth(sideRuns[i], W) ? 1 : 0), 0);
+            const need = Math.min(2, indices.length);
+            if (feasibleCount >= need) { chosen = W; break; }
+          }
         }
         groupWidth[gi] = chosen;
       }
 
       const fallBackToPerSide = groupWidth.every(w => w == null);
 
-      if (!fallBackToPerSide) {
+      if (maxSpigotsPerPanel === 3 && !fallBackToPerSide) {
         // Build layouts using the group's width when available; if a group has no common
         // width, fall back to per-side solver just for those indices
         sideRuns.forEach((len:number, idx:number) => {
