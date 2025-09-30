@@ -143,7 +143,7 @@ export default function LayoutForm() {
       if (filteredHandrails.length) setHandrail(filteredHandrails[0].value);
       else setHandrail('none');
     }
-  }, [filteredHandrails, fenceCategory]);
+  }, [filteredHandrails, fenceCategory, handrail]);
 
   
 
@@ -330,7 +330,7 @@ export default function LayoutForm() {
   let totalSpigots: number | undefined;
     const notes: string[] = [];
   let sidePanelLayouts: { panelWidths: number[]; gap: number; adjustedLength: number;}[] = [];
-    let allPanels: number[] = [];
+  const allPanels: number[] = [];
   let gateCount = 0;
   const sideGatesRender: { enabled: boolean; panelIndex: number; hingeOnLeft: boolean }[] = [];
     if (ps1) {
@@ -343,11 +343,7 @@ export default function LayoutForm() {
       const baseSideArray = shape === 'custom'
         ? customRuns.map(r => r.length)
         : sideLengths.slice(0, sidesCount);
-      if (shape === 'custom') {
-        // Dev trace – remove or gate behind env flag later
-        // eslint-disable-next-line no-console
-        console.log('[custom-shape] calculating with runs', customRuns);
-      }
+      // if (shape === 'custom') { /* dev trace removed */ }
       // Convert spigotsPerPanel to numeric constraint for solver
       const maxSpigotsPerPanel = spigotsPerPanel === 'auto' ? undefined : parseInt(spigotsPerPanel, 10);
       
@@ -426,14 +422,14 @@ export default function LayoutForm() {
           const hingeOnLeft = shape === 'custom'
             ? !!(customRuns[idx]?.id && customGateByRun[customRuns[idx].id!]?.hingeOnLeft)
             : !!sideGates[idx]?.hingeOnLeft;
-          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft, gateStartMm: gateStartMm } as any;
+          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft };
         } else {
           sideGatesRender[idx] = { enabled: false, panelIndex: 0, hingeOnLeft: false };
         }
         return layout;
       });
       if (allPanels.length) {
-        const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0'), hmin:0,hmax:0,zone: windZone||'' } as any);
+  const agg = aggregatePanels(allPanels, { internal: ps1.internal, edge: ps1.edge, system: fenceCategory, thk: parseFloat(glassThickness||'0') || 0, hmin: 0, hmax: 0, zone: windZone || '' });
         panelsSummary = agg.panelsSummary;
         totalSpigots = agg.totalSpigots + gateCount * 2; // add 2 posts per gate
         estimatedPanels = agg.totalPanels;
@@ -462,7 +458,7 @@ export default function LayoutForm() {
     }, {
       totalRun,
       sideRuns: usedSides,
-      ps1: ps1 ? { internal: ps1.internal, edge: ps1.edge, source: (calcKey as any) } : null,
+  ps1: ps1 ? { internal: ps1.internal, edge: ps1.edge, source: (calcKey as unknown as 'sp10'|'sp12'|'sp13') } : null,
   estimatedSpigots,
   estimatedPanels,
   panelsSummary,
@@ -534,37 +530,7 @@ export default function LayoutForm() {
                 />
                 Gate required? (890mm + clearances)
               </label>
-              {(sideGates[i]?.enabled) && (
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] text-slate-600">Pos</label>
-                  <select
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                    value={sideGates[i]?.position || 'middle'}
-                    onChange={(e)=> setSideGates(prev => {
-                      const next = [...prev];
-                      next[i] = { ...(next[i] || { enabled: true }), position: e.target.value as 'left'|'middle'|'right' };
-                      return next;
-                    })}
-                  >
-                    <option value="left">Left</option>
-                    <option value="middle">Middle</option>
-                    <option value="right">Right</option>
-                  </select>
-                  <label className="text-[11px] text-slate-600">Hinge</label>
-                  <select
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                    value={(sideGates[i]?.hingeOnLeft ? 'left' : 'right')}
-                    onChange={(e)=> setSideGates(prev => {
-                      const next = [...prev];
-                      next[i] = { ...(next[i] || { enabled: true }), hingeOnLeft: e.target.value === 'left' };
-                      return next;
-                    })}
-                  >
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </div>
-              )}
+              {/* Position and hinge selection removed; adjust in visual below after calculation */}
             </div>
           </FieldGroup>
         ))}
