@@ -19,13 +19,15 @@ export interface LayoutCalculationInput {
   allowMixedSizes?: boolean;
   spigotsPerPanel?: 'auto' | '2' | '3';
   finish?: string;
+  // Global gate leaf width (mm) applied to any enabled gate on a side/run
+  gateLeafWidth?: number; // default 890mm
 }
 
 export interface Ps1ResultRow {
   internal: number; // internal spacing mm
   edge: number;     // edge spacing mm
   source: 'sp10' | 'sp12' | 'sp13';
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface LayoutCalculationResult {
@@ -50,7 +52,11 @@ export interface LayoutCalculationResult {
     enabled: boolean;
     panelIndex: number; // draw gate after this panel
     hingeOnLeft: boolean; // default false
+    // Optional explicit start position of the gate (mm from side start), used by 3D to align precisely
+    gateStartMm?: number;
   }[];
+  // Global gate leaf width echoed into result for consumers (SideVisuals/3D)
+  gateLeafWidth?: number;
 }
 
 export interface LayoutState {

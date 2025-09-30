@@ -1,4 +1,5 @@
 import { useLayoutStore } from "@/store/useLayoutStore";
+import type { LayoutCalculationResult } from "@/store/useLayoutStore";
 import React from "react";
 
 /**
@@ -44,6 +45,19 @@ export default function SideVisuals() {
 
     setLayout({ ...input }, { ...result, sideGatesRender: gates });
   }
+  // Adjust per-side gate leaf width only in visuals controller
+  type StoreGate = NonNullable<LayoutCalculationResult['sideGatesRender']>[number];
+  type GateMeta = StoreGate & { leafWidth?: number };
+  function setGateLeafWidth(sideIndex: number, value: number) {
+    if (!input || !result) return;
+    const gates = (result.sideGatesRender || []).slice() as GateMeta[];
+    const current = gates[sideIndex];
+    if (!current || !current.enabled) return;
+    const leaf = Math.max(350, Math.min(1000, value));
+    // Store width on the gate meta using a local extended type
+    gates[sideIndex] = { ...current, leafWidth: leaf } as GateMeta;
+    setLayout({ ...input }, { ...result, sideGatesRender: gates });
+  }
 
   // Flip hinge only: keep gate position and panels as-is, just invert hinge side
   function flipHinge(sideIndex: number) {
@@ -80,7 +94,8 @@ export default function SideVisuals() {
           cursor += layout.gap;
         });
 
-        const gate = gatesMeta[i] && gatesMeta[i].enabled ? gatesMeta[i] : null;
+  const gate = (gatesMeta[i] && gatesMeta[i].enabled ? (gatesMeta[i] as unknown as GateMeta) : null);
+  const gateLeaf = gate?.leafWidth ? Math.max(350, Math.min(1000, gate.leafWidth)) : 890;
         const omitLeadingGap = !!gate && gate.hingeOnLeft && gate.panelIndex === 0; // replace leading gap by hinge gap
 
         return (
@@ -156,9 +171,9 @@ export default function SideVisuals() {
                         );
                       }
 
-                      // Gate leaf 890mm (with hinge markers like legacy)
+                      // Gate leaf adjustable width (default 890mm) with hinge markers
                       blocks.push(
-                        <div key={`gate-${j}`} className="relative shrink-0 border border-green-600 bg-green-300/70" style={{ width: px(890) }}>
+                        <div key={`gate-${j}`} className="relative shrink-0 border border-green-600 bg-green-300/70" style={{ width: px(gateLeaf) }}>
                           <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-green-900">
                             {isWallToGlassHinge || isWallToGlassLatch ? 'WALL-GATE' : 'GATE'}
                           </div>
@@ -212,7 +227,7 @@ export default function SideVisuals() {
                     Hinge: Panel {gate.hingeOnLeft ? gate.panelIndex + 1 : gate.panelIndex + 2}, Gate: Panel {gate.hingeOnLeft ? gate.panelIndex + 2 : gate.panelIndex + 1}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => flipHinge(i)}
@@ -236,6 +251,18 @@ export default function SideVisuals() {
                   >
                     Move Hinge-Gate Right →
                   </button>
+                  <div className="ml-2 flex items-center gap-2">
+                    <label className="text-[11px] text-slate-600">Gate width (mm)</label>
+                    <input
+                      type="number"
+                      min={350}
+                      max={1000}
+                      step={5}
+                      defaultValue={gate.leafWidth ?? 890}
+                      onChange={(e)=> setGateLeafWidth(i, parseFloat(e.target.value))}
+                      className="h-8 w-24 rounded-md border border-slate-300 px-2 text-[12px] focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+                    />
+                  </div>
                 </div>
               </div>
             )}

@@ -23,7 +23,16 @@ function FacingText({
   outlineWidth = 0,
   outlineColor = "#ffffff",
   color = "#0f172a",
-}: any) {
+}: {
+  children: React.ReactNode;
+  position: [number, number, number] | THREE.Vector3;
+  fontSize: number;
+  anchorX?: "left" | "center" | "right" | number;
+  anchorY?: "top" | "middle" | "bottom" | number;
+  outlineWidth?: number;
+  outlineColor?: string | number;
+  color?: string | number;
+}) {
   const ref = useRef<THREE.Group>(null!);
   const { camera } = useThree();
   useFrame(() => {
@@ -125,15 +134,15 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const codeUpper = getModelCodeUpper(input?.calcKey);
 
   // Preload wall texture set (used for SP13 wall rendering)
-  const wallMaps = useTexture(
-    {
-      map: "/textures/Wall/BaseColor.png",
-      normalMap: "/textures/Wall/Normal.png",
-      roughnessMap: "/textures/Wall/Roughness.png",
-      // displacementMap can be loaded, but BoxGeometry won't show much without subdivisions
-      // displacementMap: "/textures/Wall/Displacement.png",
-    }
-  ) as any;
+  const wallMaps = useTexture({
+    map: "/textures/Wall/BaseColor.png",
+    normalMap: "/textures/Wall/Normal.png",
+    roughnessMap: "/textures/Wall/Roughness.png",
+  }) as {
+    map?: THREE.Texture;
+    normalMap?: THREE.Texture;
+    roughnessMap?: THREE.Texture;
+  };
   // Configure base sampling only once
   if (wallMaps?.map) {
     wallMaps.map.colorSpace = THREE.SRGBColorSpace;
@@ -156,7 +165,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     glassHeight: number;
   } | null>(() => {
     if (!input || !result) return null;
-    const { sideLengths, glassHeight = 1100, customVectors } = input as any;
+  const { sideLengths, glassHeight = 1100, customVectors } = input;
     if (!sideLengths || !sideLengths.length) return null;
     const ps1 = result.ps1;
     const segments = buildSegments(sideLengths, customVectors);
@@ -164,9 +173,9 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     const edge = ps1?.edge ?? 250;
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
 
-    const layouts = result.sidePanelLayouts;
-    const gates = result.sideGatesRender || [];
-    const GATE_TOTAL_WIDTH = 905;
+  const layouts = result.sidePanelLayouts;
+  const gates = result.sideGatesRender || [];
+  const GATE_TOTAL_WIDTH = 905; // keep fixed in 3D; visuals controller only adjusts displayed width
     const panelMeshes: PanelMesh[] = [];
     if (layouts && layouts.length) {
       layouts.forEach((layout, i) => {
@@ -180,8 +189,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
           // Insert gate slot at the correct panel index (after panelIndex)
           if (gate && gate.enabled && !gateInserted && j === gate.panelIndex) {
             // If we have an explicit mm start (from designer mapping), align cursor
-            if (typeof (gate as any).gateStartMm === 'number') {
-              cursor = (gate as any).gateStartMm as number;
+            if (typeof gate.gateStartMm === 'number') {
+              cursor = gate.gateStartMm as number;
             }
             // Advance by the gate width (we don't draw the gate panel here)
             cursor += GATE_TOTAL_WIDTH;
@@ -330,9 +339,9 @@ export function SpigotLayout(props: ComponentProps<"group">) {
                   metalness={0.0}
                   roughness={0.9}
                   envMapIntensity={0.15}
-                  map={map as any}
-                  normalMap={nrm as any}
-                  roughnessMap={rough as any}
+                  map={map}
+                  normalMap={nrm}
+                  roughnessMap={rough}
                   normalScale={new THREE.Vector2(0.6, 0.6)}
                 />
               </mesh>

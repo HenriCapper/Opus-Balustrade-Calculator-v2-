@@ -332,7 +332,7 @@ export default function LayoutForm() {
   let sidePanelLayouts: { panelWidths: number[]; gap: number; adjustedLength: number;}[] = [];
   const allPanels: number[] = [];
   let gateCount = 0;
-  const sideGatesRender: { enabled: boolean; panelIndex: number; hingeOnLeft: boolean }[] = [];
+  const sideGatesRender: { enabled: boolean; panelIndex: number; hingeOnLeft: boolean; gateStartMm?: number }[] = [];
     if (ps1) {
       // Symmetric solver per side (legacy simple case). Mixed sizes & gates not yet.
       const gapMin = fenceCategory === 'balustrade' ? 14 : 14;
@@ -352,8 +352,8 @@ export default function LayoutForm() {
         const panelStep = glassMode === 'standard' ? 10 : 25;
         const allowMixed = glassMode === 'stock' && allowMixedSizes;
 
-        // Gate handling
-        const GATE_TOTAL_WIDTH = 905; // 890 leaf + 5 hinge + 10 latch
+  // Gate handling – fixed legacy total width (890 leaf + 5 hinge + 10 latch)
+  const GATE_TOTAL_WIDTH = 905;
         let effectiveLen = len;
         let hasGate = false;
         if (shape === 'custom') {
@@ -422,7 +422,7 @@ export default function LayoutForm() {
           const hingeOnLeft = shape === 'custom'
             ? !!(customRuns[idx]?.id && customGateByRun[customRuns[idx].id!]?.hingeOnLeft)
             : !!sideGates[idx]?.hingeOnLeft;
-          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft };
+          sideGatesRender[idx] = { enabled: true, panelIndex: pIndex, hingeOnLeft, gateStartMm };
         } else {
           sideGatesRender[idx] = { enabled: false, panelIndex: 0, hingeOnLeft: false };
         }
