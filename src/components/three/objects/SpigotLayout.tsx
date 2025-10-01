@@ -75,6 +75,15 @@ interface PanelMesh {
   spigotOffsets: number[];
 }
 
+interface GateMesh {
+  mid: THREE.Vector3;
+  dir: THREE.Vector3;
+  width: number; // leaf width in mm
+  height: number; // height mm
+  seg: Segment;
+  hingeOnLeft: boolean;
+}
+
 type SpigotItem = { position: THREE.Vector3; segIndex: number; quat: THREE.Quaternion };
 
 function buildSegments(lengths: number[], customVectors?: { dx: number; dy: number; length: number }[]): Segment[] {
@@ -160,6 +169,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   const data = useMemo<{
     panelMeshes: PanelMesh[];
+    gateMeshes: GateMesh[];
     spigots: SpigotItem[];
     segments: Segment[];
     glassHeight: number;
@@ -177,6 +187,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const gates = result.sideGatesRender || [];
   const GATE_TOTAL_WIDTH = 905; // keep fixed in 3D; visuals controller only adjusts displayed width
     const panelMeshes: PanelMesh[] = [];
+    const gateMeshes: GateMesh[] = [];
     if (layouts && layouts.length) {
       layouts.forEach((layout, i) => {
         const seg = segments[i];
@@ -192,6 +203,22 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             if (typeof gate.gateStartMm === 'number') {
               cursor = gate.gateStartMm as number;
             }
+            // Draw gate leaf (visual only) before advancing by total gate span
+            const hingeOnLeft = !!gate.hingeOnLeft;
+            const isWallToGlassHinge = hingeOnLeft && gate.panelIndex === 0;
+            const hingeGapMm = isWallToGlassHinge ? 7 : 5; // match 2D logic approximately
+            const leafWidthMm = 890; // visual leaf width
+            const startOff = cursor + hingeGapMm;
+            const midLocal = seg.dir.clone().multiplyScalar(startOff + leafWidthMm / 2);
+            const mid = seg.start.clone().add(midLocal);
+            gateMeshes.push({
+              mid,
+              dir: seg.dir.clone(),
+              width: leafWidthMm,
+              height: glassHeight,
+              seg,
+              hingeOnLeft,
+            });
             // Advance by the gate width (we don't draw the gate panel here)
             cursor += GATE_TOTAL_WIDTH;
             gateInserted = true;
@@ -257,7 +284,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
       })
     );
 
-    return { panelMeshes, spigots, segments, glassHeight };
+    return { panelMeshes, gateMeshes, spigots, segments, glassHeight };
   }, [input, result]);
 
   if (!data) return null;
@@ -267,7 +294,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     return isNaN(n) ? 12 : n;
   })();
   const thicknessM = glassThicknessMm * 0.001;
-  const { panelMeshes, spigots, segments } = data;
+  const { panelMeshes, gateMeshes, spigots, segments } = data;
 
   // Compute dynamic ground plane size (optional visual aid for custom shapes)
   const bounds = new THREE.Box3();
@@ -398,6 +425,58 @@ export function SpigotLayout(props: ComponentProps<"group">) {
               outlineWidth={0.0015}
               outlineColor="#ffffff"
             >{`${p.width.toFixed(0)} mm`}</FacingText>
+          </group>
+        );
+      })}
+      {/* Gate leaves (visuals) */}
+      {gateMeshes.map((g: GateMesh, i: number) => {
+        const scale = 0.001;
+        const mid = g.mid.clone().multiplyScalar(scale);
+        const widthM = g.width * scale;
+        const heightM = g.height * scale;
+        const dirUnit = g.dir.clone().normalize();
+        const normal = new THREE.Vector3(dirUnit.z, 0, -dirUnit.x).normalize();
+        const quat = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          normal
+        );
+  // Larger hinge blocks for visibility
+  const hingeBlockWidthM = 0.02;  // 20mm along the width (local X)
+  const hingeBlockHeightM = 0.06; // 60mm tall
+  const hingeBlockDepthM = Math.max(0.016, thicknessM + 0.004); // slightly thicker than glass to protrude
+  const hingeInsetM = 0.003; // small inset from the edge
+  const hingeX = (g.hingeOnLeft ? -1 : 1) * (widthM / 2 - hingeBlockWidthM / 2 - hingeInsetM);
+  const hingeYPositions = [0.25, 0.5, 0.75];
+        return (
+          <group key={`gate-${i}`}>
+            <mesh
+              position={[mid.x, heightM / 2, mid.z]}
+              geometry={basePanelGeom}
+              quaternion={quat}
+              scale={[widthM, heightM, thicknessM]}
+              castShadow
+            >
+              {/* Match default panel glass material */}
+              <LightGlassMaterial
+                color="#93c5fd"
+                opacity={0.08}
+                ior={1.5}
+                fresnelPower={4.0}
+              />
+            </mesh>
+            {/* Hinge markers along hinge side */}
+            <group position={[mid.x, 0, mid.z]} quaternion={quat}>
+                {hingeYPositions.map((t, idx) => {
+                // Middle hinge (idx === 1) goes on the opposite side
+                const x = idx === 1 ? -hingeX : hingeX;
+                return (
+                  <mesh key={idx} position={[x, heightM * t, 0]}>
+                    <boxGeometry args={[hingeBlockWidthM, hingeBlockHeightM, hingeBlockDepthM]} />
+                    <meshStandardMaterial color="#000000" metalness={0.2} roughness={0.5} />
+                  </mesh>
+                );
+              })}
+            </group>
           </group>
         );
       })}
