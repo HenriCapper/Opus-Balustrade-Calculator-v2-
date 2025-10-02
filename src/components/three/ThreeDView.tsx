@@ -4,7 +4,7 @@ import { useLayoutStore } from '@/store/useLayoutStore';
 import { CALC_OPTION_MAP, type CalcKey } from '@/data/calcOptions';
 import SceneCanvas from './SceneCanvas';
 import { SpigotLayout } from './objects/SpigotLayout';
-import { findBestLayout, solveSymmetric, aggregatePanels } from '@/data/panelSolver';
+import { findBestLayout, solveSymmetric, aggregatePanels, findGateAdjustedLayout } from '@/data/panelSolver';
 
 // Container page for /:system/:calc/:shape/3d-view
 export default function ThreeDView() {
@@ -15,7 +15,14 @@ export default function ThreeDView() {
   const setLayout = useLayoutStore(s=>s.setLayout);
   const [localSpigotsMode, setLocalSpigotsMode] = useState<'auto'|'2'|'3'|null>(null);
   // Preserve the original (auto) panels summary + totals + layouts so we can restore when user toggles back to 'auto'
-  const originalPanelsRef = useRef<{ summary?: string; totalSpigots?: number; estimatedSpigots?: number; sidePanelLayouts?: any[]; allPanels?: number[] } | null>(null);
+  const originalPanelsRef = useRef<{
+    summary?: string;
+    totalSpigots?: number;
+    estimatedSpigots?: number;
+    sidePanelLayouts?: any[];
+    allPanels?: number[];
+    sideGates?: NonNullable<typeof result>['sideGatesRender'];
+  } | null>(null);
 
   // Capture original result once (or when a brand new calculation arrives)
   useEffect(() => {
@@ -29,6 +36,7 @@ export default function ThreeDView() {
           estimatedSpigots: result.estimatedSpigots,
           sidePanelLayouts: result.sidePanelLayouts,
           allPanels: result.allPanels,
+          sideGates: result.sideGatesRender?.map(g => (g ? { ...g } : g)),
           _key: key as any,
         } as any;
       }
@@ -60,6 +68,10 @@ export default function ThreeDView() {
     let nextResult = { ...result };
     const ps1 = result.ps1;
     const sideRuns = result.sideRuns || input.sideLengths || [];
+    const originalGates = originalPanelsRef.current?.sideGates;
+    const gatesMeta = (mode === 'auto' && originalGates ? originalGates : result.sideGatesRender) || [];
+    const updatedGates = gatesMeta.map(g => (g ? { ...g } : undefined));
+    let gatesDirty = false;
     const fenceType = input.fenceType || 'balustrade';
     const isPool = fenceType.toLowerCase().includes('pool');
     const gapMin = isPool ? 14 : 14;
@@ -71,6 +83,98 @@ export default function ThreeDView() {
     // Panel step consistent with LayoutForm (10mm standard, 25mm stock)
     const panelStep = input.glassMode === 'standard' ? 10 : 25;
     const allowMixed = input.glassMode === 'stock' && input.allowMixedSizes;
+    const GATE_TOTAL_WIDTH = 905;
+    const gateCount = gatesMeta.filter(g => g?.enabled).length;
+    const effectiveLengthForSide = (len: number, sideIndex: number) => {
+      const gate = gatesMeta[sideIndex];
+      if (gate?.enabled) {
+        return Math.max(0, len - GATE_TOTAL_WIDTH);
+      }
+      return len;
+    };
+    const recalcGateStart = (sideIndex: number, layout?: { panelWidths: number[]; gap: number }) => {
+      const gate = updatedGates[sideIndex];
+      if (!gate?.enabled || !layout || !layout.panelWidths || !layout.panelWidths.length) {
+        return;
+      }
+      const boundaries: number[] = [];
+      let cursor = layout.gap;
+      layout.panelWidths.forEach((w) => {
+        boundaries.push(cursor);
+        cursor += w + layout.gap;
+      });
+      if (!boundaries.length) return;
+      const clampedIdx = Math.min(Math.max(gate.panelIndex ?? 0, 0), boundaries.length - 1);
+      const fallback = boundaries[clampedIdx];
+      const target = typeof gate.gateStartMm === 'number' ? gate.gateStartMm : fallback;
+      let bestIdx = clampedIdx;
+      let bestVal = fallback;
+      let bestDist = Math.abs(fallback - target);
+      boundaries.forEach((val, idx) => {
+        const dist = Math.abs(val - target);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = idx;
+          bestVal = val;
+        }
+      });
+      gate.panelIndex = Math.min(layout.panelWidths.length - 1, Math.max(0, bestIdx));
+      gate.gateStartMm = bestVal;
+      gatesDirty = true;
+    };
+    const solverRow = ps1 ? { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any : null;
+    const solveGateLayout = (
+      len: number,
+      maxSpigots?: number
+    ): { panelWidths:number[]; gap:number; adjustedLength:number; } | null => {
+      if (!solverRow) return null;
+      return (findGateAdjustedLayout as unknown as (
+        run: number,
+        gapMin: number,
+        gapMax: number,
+        maxPanelWidth: number,
+        panelStep: number,
+        ps1?: any,
+        maxSpigotsPerPanel?: number,
+        allowMixed?: boolean
+      ) => { panelWidths:number[]; gap:number; adjustedLength:number; } | null)(
+        len,
+        gapMin,
+        gapMax,
+        cap,
+        panelStep,
+        solverRow,
+        maxSpigots,
+        allowMixed
+      );
+    };
+    const solvePanelLayout = (
+      len: number,
+      maxSpigots?: number
+    ): { panelWidths:number[]; gap:number; adjustedLength:number; } | null => {
+      if (!solverRow) return null;
+      return (
+        findBestLayout(
+          len,
+          gapMin,
+          gapMax,
+          cap,
+          panelStep,
+          solverRow,
+          maxSpigots,
+          allowMixed
+        ) ||
+        solveSymmetric(
+          len,
+          gapMin,
+          gapMax,
+          cap,
+          panelStep,
+          solverRow,
+          maxSpigots
+        )
+      );
+    };
 
     if (mode === 'auto') {
       if (originalPanelsRef.current) {
@@ -82,30 +186,21 @@ export default function ThreeDView() {
           estimatedSpigots: originalPanelsRef.current.estimatedSpigots,
           sidePanelLayouts: originalPanelsRef.current.sidePanelLayouts,
           allPanels: originalPanelsRef.current.allPanels,
+          sideGatesRender: originalPanelsRef.current.sideGates?.map(g => (g ? { ...g } : g)),
         } as any;
       } else if (ps1) {
         // Fallback: recompute layouts with no spigot constraint (auto) if original missing
         const newLayouts: { panelWidths:number[]; gap:number; adjustedLength:number;}[] = [];
         const allPanels: number[] = [];
-        sideRuns.forEach((len:number) => {
-          const layout = findBestLayout(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any,
-            undefined,
-            allowMixed
-          ) || solveSymmetric(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk:0,hmin:0,hmax:0,zone:'' } as any
-          );
-          if (layout) { newLayouts.push(layout); allPanels.push(...layout.panelWidths); }
+        sideRuns.forEach((len:number, idx:number) => {
+          const effectiveLen = effectiveLengthForSide(len, idx);
+          const hasGate = !!gatesMeta[idx]?.enabled;
+          const layout = hasGate ? solveGateLayout(effectiveLen) : solvePanelLayout(effectiveLen);
+          if (layout) {
+            newLayouts.push(layout);
+            allPanels.push(...layout.panelWidths);
+            recalcGateStart(idx, layout);
+          }
         });
         if (allPanels.length) {
           const groups: Record<string,{count:number;width:number;}> = {};
@@ -113,7 +208,7 @@ export default function ThreeDView() {
           const summary = Object.values(groups)
             .sort((a,b)=>b.width - a.width)
             .map(g=>`${g.count} × @${g.width.toFixed(2)} mm (${Math.max(2, Math.ceil((g.width - 2*ps1.edge)/ps1.internal)+1)} spigots each)`).join('<br>');
-          const totalSpigots = allPanels.reduce((acc,w)=>{
+          const totalSpigotsPanels = allPanels.reduce((acc,w)=>{
             const s = Math.max(2, Math.ceil((w - 2*ps1.edge)/ps1.internal)+1);
             return acc + s;
           },0);
@@ -122,15 +217,22 @@ export default function ThreeDView() {
             sidePanelLayouts: newLayouts,
             allPanels,
             panelsSummary: summary,
-            totalSpigots,
-            estimatedSpigots: totalSpigots,
+            totalSpigots: totalSpigotsPanels + gateCount * 2,
+            estimatedSpigots: totalSpigotsPanels + gateCount * 2,
           };
+          if (gatesDirty && updatedGates.length) {
+            nextResult = {
+              ...nextResult,
+              sideGatesRender: updatedGates as any,
+            };
+          }
         }
       }
       setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
       setLocalSpigotsMode(mode);
       return;
     }
+
 
     // Recalculate layouts with spigot constraint
     const maxSpigotsPerPanel = parseInt(mode, 10); // 2 or 3
@@ -146,14 +248,22 @@ export default function ThreeDView() {
       const spigotConstrainedWidth = ps1.edge * 2 + (maxSpigotsPerPanel - 1) * ps1.internal;
       const effectiveMaxWidth = Math.min(cap, spigotConstrainedWidth);
       const snapDown = (w:number) => Math.floor(w / (panelStep || 1)) * (panelStep || 1);
-      const canSolveWithWidth = (L:number, W:number): {cnt:number; gap:number} | null => {
+      const canSolveWithWidth = (L:number, W:number, hasGate:boolean): {cnt:number; gap:number} | null => {
         // Find smallest count (fewest panels) such that gap in [gapMin, gapMax]
         // Using inequalities to bound cnt quickly
         const step = 1;
-        let cnt = Math.max(1, Math.ceil((L - gapMax) / (W + gapMax)));
-        const cntMax = Math.max(cnt, Math.floor((L - gapMin) / (W + gapMin)));
+        if (L <= 0) return null;
+        let cnt: number;
+        let cntMax: number;
+        if (hasGate) {
+          cnt = Math.max(1, Math.ceil(L / (W + gapMax)));
+          cntMax = Math.max(cnt, Math.floor(L / (W + gapMin)));
+        } else {
+          cnt = Math.max(1, Math.ceil((L - gapMax) / (W + gapMax)));
+          cntMax = Math.max(cnt, Math.floor((L - gapMin) / (W + gapMin)));
+        }
         for (; cnt <= Math.min(600, cntMax); cnt += step) {
-          const gap = (L - cnt * W) / (cnt + 1);
+          const gap = hasGate ? (L - cnt * W) / cnt : (L - cnt * W) / (cnt + 1);
           if (gap >= gapMin && gap <= gapMax) return { cnt, gap };
         }
         return null;
@@ -173,26 +283,10 @@ export default function ThreeDView() {
   const isCustom = String((input as any).shape || '').toLowerCase().includes('custom');
         if (isCustom) {
           const longestIdx = indices.slice().sort((a,b)=> sideRuns[b] - sideRuns[a])[0];
-          const len = sideRuns[longestIdx];
+          const hasGate = !!gatesMeta[longestIdx]?.enabled;
+          const len = effectiveLengthForSide(sideRuns[longestIdx], longestIdx);
           // Solve per-side with constraint to get its natural widest width
-          const layoutLongest = findBestLayout(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel,
-            allowMixed
-          ) || solveSymmetric(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel
-          );
+          const layoutLongest = hasGate ? solveGateLayout(len, maxSpigotsPerPanel) : solvePanelLayout(len, maxSpigotsPerPanel);
           if (layoutLongest && layoutLongest.panelWidths.length) {
             const wCandidate = snapDown(Math.min(effectiveMaxWidth, Math.max(...layoutLongest.panelWidths)));
             const actualSpigots = Math.max(2, Math.ceil((wCandidate - 2 * ps1.edge) / ps1.internal) + 1);
@@ -206,7 +300,11 @@ export default function ThreeDView() {
           for (let W = snapDown(effectiveMaxWidth); W >= 200; W -= (panelStep || 1)) {
             const actualSpigots = Math.max(2, Math.ceil((W - 2 * ps1.edge) / ps1.internal) + 1);
             if (actualSpigots > maxSpigotsPerPanel) continue;
-            const feasibleCount = indices.reduce((acc,i)=> acc + (canSolveWithWidth(sideRuns[i], W) ? 1 : 0), 0);
+            const feasibleCount = indices.reduce((acc,i)=>{
+              const hasGate = !!gatesMeta[i]?.enabled;
+              const effLen = effectiveLengthForSide(sideRuns[i], i);
+              return acc + (canSolveWithWidth(effLen, W, hasGate) ? 1 : 0);
+            }, 0);
             const need = Math.min(2, indices.length);
             if (feasibleCount >= need) { chosen = W; break; }
           }
@@ -222,64 +320,37 @@ export default function ThreeDView() {
         sideRuns.forEach((len:number, idx:number) => {
           const gi = idx % 2;
           const W = groupWidth[gi];
+          const hasGate = !!gatesMeta[idx]?.enabled;
+          const effLen = effectiveLengthForSide(len, idx);
           if (W != null) {
-            const solved = canSolveWithWidth(len, W);
+            const solved = canSolveWithWidth(effLen, W, hasGate);
             if (solved) {
               const { cnt, gap } = solved;
-              const layout = { panelWidths: Array(cnt).fill(W), gap, adjustedLength: len };
+              const layout = { panelWidths: Array(cnt).fill(W), gap, adjustedLength: effLen };
               newLayouts.push(layout);
               allPanels.push(...layout.panelWidths);
+              recalcGateStart(idx, layout);
               return;
             }
           }
           // Per-side fallback for this particular side
-          const layout = findBestLayout(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel,
-            allowMixed
-          ) || solveSymmetric(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel
-          );
+          const layout = hasGate ? solveGateLayout(effLen, maxSpigotsPerPanel) : solvePanelLayout(effLen, maxSpigotsPerPanel);
           if (layout) {
             newLayouts.push(layout);
             allPanels.push(...layout.panelWidths);
+            recalcGateStart(idx, layout);
           }
         });
       } else {
         // Fallback: Try legacy findBestLayout per side (previous behavior)
-        sideRuns.forEach((len:number) => {
-          const layout = findBestLayout(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel,
-            allowMixed
-          ) || solveSymmetric(
-            len,
-            gapMin,
-            gapMax,
-            cap,
-            panelStep,
-            { internal: ps1.internal, edge: ps1.edge, system: ps1.source||'spigots', thk: 0, hmin:0,hmax:0, zone: '' } as any,
-            maxSpigotsPerPanel
-          );
+        sideRuns.forEach((len:number, idx:number) => {
+          const hasGate = !!gatesMeta[idx]?.enabled;
+          const effLen = effectiveLengthForSide(len, idx);
+          const layout = hasGate ? solveGateLayout(effLen, maxSpigotsPerPanel) : solvePanelLayout(effLen, maxSpigotsPerPanel);
           if (layout) {
             newLayouts.push(layout);
             allPanels.push(...layout.panelWidths);
+            recalcGateStart(idx, layout);
           }
         });
       }
@@ -295,7 +366,7 @@ export default function ThreeDView() {
         .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${maxSpigotsPerPanel} spigots each)`) // match forced mode style
         .join('<br>');
       const totalPanels = allPanels.length;
-      const totalSpigots = totalPanels * maxSpigotsPerPanel;
+      const totalSpigots = totalPanels * maxSpigotsPerPanel + gateCount * 2;
       nextResult = {
         ...nextResult,
         sidePanelLayouts: newLayouts,
@@ -303,6 +374,18 @@ export default function ThreeDView() {
         panelsSummary: summary,
         totalSpigots,
         estimatedSpigots: totalSpigots,
+      };
+      if (gatesDirty && updatedGates.length) {
+        nextResult = {
+          ...nextResult,
+          sideGatesRender: updatedGates as any,
+        };
+      }
+    }
+    if (!gatesDirty && updatedGates.length && ps1) {
+      nextResult = {
+        ...nextResult,
+        sideGatesRender: updatedGates as any,
       };
     }
     setLayout({ ...input, spigotsPerPanel: mode }, nextResult);
