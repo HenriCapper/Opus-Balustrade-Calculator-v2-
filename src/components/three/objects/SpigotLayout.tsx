@@ -1,4 +1,5 @@
 import { useLayoutStore } from "@/store/useLayoutStore";
+import type { LayoutCalculationResult } from "@/store/useLayoutStore";
 import type { ComponentProps } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -83,6 +84,10 @@ interface GateMesh {
   seg: Segment;
   hingeOnLeft: boolean;
 }
+
+type GateRenderMeta = NonNullable<LayoutCalculationResult["sideGatesRender"]>[number] & {
+  leafWidth?: number;
+};
 
 type SpigotItem = { position: THREE.Vector3; segIndex: number; quat: THREE.Quaternion };
 
@@ -184,8 +189,9 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
 
   const layouts = result.sidePanelLayouts;
-  const gates = result.sideGatesRender || [];
+  const gates = (result.sideGatesRender || []) as GateRenderMeta[];
   const GATE_TOTAL_WIDTH = 905; // keep fixed in 3D; visuals controller only adjusts displayed width
+  const defaultGateLeaf = result.gateLeafWidth ?? input?.gateLeafWidth ?? 890;
     const panelMeshes: PanelMesh[] = [];
     const gateMeshes: GateMesh[] = [];
     if (layouts && layouts.length) {
@@ -197,19 +203,29 @@ export function SpigotLayout(props: ComponentProps<"group">) {
         let cursor = gap;
         let gateInserted = false;
         panelWidths.forEach((w, j) => {
-          // Insert gate slot at the correct panel index (after panelIndex)
           if (gate && gate.enabled && !gateInserted && j === gate.panelIndex) {
-            // If we have an explicit mm start (from designer mapping), align cursor
-            if (typeof gate.gateStartMm === 'number') {
-              cursor = gate.gateStartMm as number;
-            }
-            // Draw gate leaf (visual only) before advancing by total gate span
+            const defaultSlotStart = cursor;
+            const hasExplicitStart = typeof gate.gateStartMm === 'number';
+            const rawSlotStart = hasExplicitStart ? gate.gateStartMm! : defaultSlotStart;
+            const gateStart = (() => {
+              if (!hasExplicitStart) return Math.max(0, defaultSlotStart - gap);
+              return Math.max(
+                0,
+                Math.abs(rawSlotStart - defaultSlotStart) < 0.5
+                  ? rawSlotStart - gap
+                  : rawSlotStart
+              );
+            })();
             const hingeOnLeft = !!gate.hingeOnLeft;
             const isWallToGlassHinge = hingeOnLeft && gate.panelIndex === 0;
-            const hingeGapMm = isWallToGlassHinge ? 7 : 5; // match 2D logic approximately
-            const leafWidthMm = 890; // visual leaf width
-            const startOff = cursor + hingeGapMm;
-            const midLocal = seg.dir.clone().multiplyScalar(startOff + leafWidthMm / 2);
+            const hingeGapMm = isWallToGlassHinge ? 7 : 5;
+            const maxLeafWidth = Math.max(200, GATE_TOTAL_WIDTH - hingeGapMm);
+            const leafWidthMm = Math.max(
+              350,
+              Math.min(maxLeafWidth - 5, gate.leafWidth ?? defaultGateLeaf ?? 890)
+            );
+            const leafStart = gateStart + hingeGapMm;
+            const midLocal = seg.dir.clone().multiplyScalar(leafStart + leafWidthMm / 2);
             const mid = seg.start.clone().add(midLocal);
             gateMeshes.push({
               mid,
@@ -219,11 +235,9 @@ export function SpigotLayout(props: ComponentProps<"group">) {
               seg,
               hingeOnLeft,
             });
-            // Advance by the gate width (we don't draw the gate panel here)
-            cursor += GATE_TOTAL_WIDTH;
+            cursor = gateStart + GATE_TOTAL_WIDTH;
             gateInserted = true;
           }
-          // Render normal panel
           const startOff = cursor;
           const midLocal = seg.dir.clone().multiplyScalar(startOff + w / 2);
           const mid = seg.start.clone().add(midLocal);

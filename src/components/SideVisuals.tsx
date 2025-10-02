@@ -39,9 +39,19 @@ export default function SideVisuals() {
     }
     const hingeOnLeft = typeof next.hingeOnLeft === 'boolean' ? next.hingeOnLeft : current.hingeOnLeft;
 
+    // Recompute gate start mm (matches solver formula in LayoutForm)
+    const sumBefore = layout.panelWidths.slice(0, pIndex).reduce((acc, val) => acc + val, 0);
+    const gateStartMm = layout.gap + sumBefore + layout.gap * pIndex;
+
     // Recompute gate start in mm from the chosen boundary (leading gap + preceding panels/gaps)
     // Persist the new hinge + position; 3D view can infer gate start from panelIndex
-    gates[sideIndex] = { ...current, panelIndex: pIndex, hingeOnLeft, enabled: true };
+    gates[sideIndex] = {
+      ...current,
+      panelIndex: pIndex,
+      hingeOnLeft,
+      enabled: true,
+      gateStartMm,
+    };
 
     setLayout({ ...input }, { ...result, sideGatesRender: gates });
   }
@@ -83,20 +93,94 @@ export default function SideVisuals() {
         const PX_PER_MM = 0.2; // 0.2 px per mm => 2000 mm = 400 px
         const px = (mm: number) => Math.max(0, Math.round(mm * PX_PER_MM));
 
-        // Precompute gap label positions (center of each uniform gap region)
-        const gapCenters: number[] = [];
-        let cursor = 0; // mm along the run
-        gapCenters.push(px(layout.gap / 2));
-        cursor += layout.gap;
-        layout.panelWidths.forEach((w) => {
-          cursor += w;
-          gapCenters.push(px(cursor + layout.gap / 2));
-          cursor += layout.gap;
+        const totalPanels = layout.panelWidths.length;
+        const gate =
+          gatesMeta[i] && gatesMeta[i].enabled
+            ? (gatesMeta[i] as unknown as GateMeta)
+            : null;
+        const gateLeaf = gate?.leafWidth ? Math.max(350, Math.min(1000, gate.leafWidth)) : 890;
+
+        const gateIndexRaw = gate ? Math.max(0, Math.min(totalPanels, gate.panelIndex)) : -1;
+        const hasGateBeforePanel = (panelIndex: number) => gate && gateIndexRaw === panelIndex;
+        const gateHasRightPanel = gate ? gateIndexRaw < totalPanels : false;
+        const gateHasLeftPanel = gate ? gateIndexRaw > 0 : false;
+        const hingeGapWidth = gate
+          ? gate.hingeOnLeft
+            ? gateHasLeftPanel
+              ? 5
+              : 7
+            : gateHasRightPanel
+              ? 5
+              : 7
+          : 0;
+        const latchGapWidth = gate
+          ? gate.hingeOnLeft
+            ? gateHasRightPanel
+              ? 10
+              : 7.5
+            : gateHasLeftPanel
+              ? 10
+              : 7.5
+          : 0;
+        const gateTotalWidth = gate ? hingeGapWidth + latchGapWidth + gateLeaf : 0;
+        const omitLeadingGap = !!gate && gateIndexRaw === 0;
+        const hingePanelIndex = gate
+          ? gate.hingeOnLeft
+            ? gateHasLeftPanel
+              ? gateIndexRaw - 1
+              : null
+            : gateIndexRaw < totalPanels
+              ? gateIndexRaw
+              : null
+          : null;
+        const latchPanelIndex = gate
+          ? gate.hingeOnLeft
+            ? gateIndexRaw < totalPanels
+              ? gateIndexRaw
+              : null
+            : gateHasLeftPanel
+              ? gateIndexRaw - 1
+              : null
+          : null;
+
+        const gapLabelPositions: number[] = [];
+        let cursorMm = 0;
+        if (!omitLeadingGap) {
+          gapLabelPositions.push(px(cursorMm + layout.gap / 2));
+          cursorMm += layout.gap;
+        }
+        layout.panelWidths.forEach((w, panelIdx) => {
+          if (gate && hasGateBeforePanel(panelIdx)) {
+            cursorMm += gateTotalWidth;
+          }
+          cursorMm += w;
+          const skipGapAfter = gate && gateIndexRaw === panelIdx + 1;
+          if (!skipGapAfter) {
+            gapLabelPositions.push(px(cursorMm + layout.gap / 2));
+            cursorMm += layout.gap;
+          }
         });
 
-  const gate = (gatesMeta[i] && gatesMeta[i].enabled ? (gatesMeta[i] as unknown as GateMeta) : null);
-  const gateLeaf = gate?.leafWidth ? Math.max(350, Math.min(1000, gate.leafWidth)) : 890;
-        const omitLeadingGap = !!gate && gate.hingeOnLeft && gate.panelIndex === 0; // replace leading gap by hinge gap
+        const renderGapSegment = (
+          type: "hinge" | "latch",
+          widthMm: number,
+          toWall: boolean,
+          key: string
+        ) => {
+          if (widthMm <= 0) return null;
+          const hingeClasses = toWall
+            ? "bg-red-200 border border-red-400"
+            : "bg-yellow-200 border border-yellow-400";
+          const latchClasses = toWall
+            ? "bg-orange-200 border border-orange-500"
+            : "bg-orange-200 border border-orange-400";
+          const baseClasses = type === "hinge" ? hingeClasses : latchClasses;
+          return (
+            <div key={key} className="shrink-0" style={{ width: px(widthMm) }}>
+              <div className={`h-full ${baseClasses}`} />
+            </div>
+          );
+        };
 
         return (
           <div key={i} className="w-full">
@@ -107,7 +191,7 @@ export default function SideVisuals() {
             <div className="overflow-x-auto">
               <div className="relative" style={{ width: px(run) }}>
                 {/* Gap value labels */}
-                {gapCenters.map((cx, gi) => (
+                {gapLabelPositions.map((cx, gi) => (
                   <div
                     key={gi}
                     className="pointer-events-none absolute -top-5 -translate-x-1/2 text-[11px] font-medium text-sky-700"
@@ -120,99 +204,125 @@ export default function SideVisuals() {
                 {/* Bar container */}
                 <div className="relative w-full overflow-visible rounded border border-slate-300 bg-white">
                   <div className="flex h-20 items-stretch">
-                    {/* leading gap spacer (omit when hinge-to-wall at start) */}
-                    <div style={{ width: omitLeadingGap ? 0 : px(layout.gap) }} />
+                    {/* leading gap spacer (omit when gate replaces the leading gap) */}
+                    {!omitLeadingGap && <div style={{ width: px(layout.gap) }} />}
                     {layout.panelWidths.map((w, j) => {
-                      const isGateHere = !!gate && j === gate.panelIndex;
-                      const isHingePanel = !!gate && (gate.hingeOnLeft ? j === gate.panelIndex : j === gate.panelIndex + 1);
-                      const totalPanels = layout.panelWidths.length;
-                      const isWallToGlassHinge = !!gate && gate.hingeOnLeft && gate.panelIndex === 0;
-                      const isWallToGlassLatch = !!gate && !gate.hingeOnLeft && gate.panelIndex === totalPanels - 1;
+                      const gateBeforePanel = gate && hasGateBeforePanel(j);
+                      const skipGapAfter = gate && gateIndexRaw === j + 1;
+                      const isHingePanel = hingePanelIndex === j;
+                      const isLatchPanel = latchPanelIndex === j;
+
+                      const labelText = isHingePanel
+                        ? `Hinge ${w.toFixed(0)}`
+                        : isLatchPanel
+                          ? `Latch ${w.toFixed(0)}`
+                          : w.toFixed(0);
 
                       const panelEl = (
                         <div
-                          className={`relative shrink-0 border ${isHingePanel ? 'border-sky-500 bg-sky-100' : 'border-sky-300 bg-sky-200/80'}`}
+                          key={`panel-${j}`}
+                          className={`relative shrink-0 border ${isHingePanel ? "border-sky-500 bg-sky-100" : "border-sky-300 bg-sky-200/80"}`}
                           style={{ width: px(w) }}
                         >
                           <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-slate-700">
-                            {isHingePanel ? `Hinge ${w.toFixed(0)}` : w.toFixed(0)}
+                            {labelText}
                           </div>
                         </div>
                       );
 
-                      const gapEl = <div style={{ width: px(layout.gap) }} />;
-                      const isBeforeGate = !!gate && j === gate.panelIndex - 1; // gap after this panel is replaced by the gate sequence
+                      const elements: React.ReactNode[] = [];
 
-                      if (!isGateHere) {
-                        return (
-                          <React.Fragment key={j}>
-                            {panelEl}
-                            {!isBeforeGate && gapEl}
-                          </React.Fragment>
-                        );
-                      }
-
-                      // Gate sequence: [optional hinge gap] gate 890, [latch gap], then continue
-                      const blocks: React.ReactNode[] = [];
-
-                      // If hinge gap before gate (not wall hinge), add 5mm gap block
-                      if (!isWallToGlassHinge) {
-                        blocks.push(
-                          <div key={`hinge-gap-${j}`} className="shrink-0" style={{ width: px(5) }}>
-                            <div className="h-full bg-yellow-200 border border-yellow-400" />
-                          </div>
-                        );
-                      } else {
-                        // wall-to-glass hinge gap 7mm
-                        blocks.push(
-                          <div key={`hinge-wall-gap-${j}`} className="shrink-0" style={{ width: px(7) }}>
-                            <div className="h-full bg-red-200 border border-red-400" />
-                          </div>
-                        );
-                      }
-
-                      // Gate leaf adjustable width (default 890mm) with hinge markers
-                      blocks.push(
-                        <div key={`gate-${j}`} className="relative shrink-0 border border-green-600 bg-green-300/70" style={{ width: px(gateLeaf) }}>
-                          <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-green-900">
-                            {isWallToGlassHinge || isWallToGlassLatch ? 'WALL-GATE' : 'GATE'}
-                          </div>
-                          {/* Hinge markers: small black cylinders on hinge side */}
-                          <div
-                            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${gate?.hingeOnLeft ? 'left-0' : 'right-0'}`}
-                            style={{ width: px(0), height: '100%' }}
-                          >
-                            <div className="relative h-full w-[6px]">
-                              <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: '30%' }} />
-                              <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: '50%' }} />
-                              <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: '70%' }} />
+                      if (gateBeforePanel && gate && gateIndexRaw < totalPanels) {
+                        const gateBlocks: React.ReactNode[] = [];
+                        if (gate.hingeOnLeft) {
+                          gateBlocks.push(
+                            renderGapSegment(
+                              "hinge",
+                              hingeGapWidth,
+                              !gateHasLeftPanel,
+                              `hinge-gap-${j}`
+                            )
+                          );
+                          gateBlocks.push(
+                            <div
+                              key={`gate-${j}`}
+                              className="relative shrink-0 border border-green-600 bg-green-300/70"
+                              style={{ width: px(gateLeaf) }}
+                            >
+                              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-green-900">
+                                {gateHasLeftPanel && gateHasRightPanel ? "GATE" : "WALL-GATE"}
+                              </div>
+                              <div
+                                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${gate.hingeOnLeft ? "left-0" : "right-0"}`}
+                                style={{ width: px(0), height: "100%" }}
+                              >
+                                <div className="relative h-full w-[6px]">
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      );
+                          );
+                          gateBlocks.push(
+                            renderGapSegment(
+                              "latch",
+                              latchGapWidth,
+                              !gateHasRightPanel,
+                              `latch-gap-${j}`
+                            )
+                          );
+                        } else {
+                          gateBlocks.push(
+                            renderGapSegment(
+                              "latch",
+                              latchGapWidth,
+                              !gateHasLeftPanel,
+                              `latch-gap-${j}`
+                            )
+                          );
+                          gateBlocks.push(
+                            <div
+                              key={`gate-${j}`}
+                              className="relative shrink-0 border border-green-600 bg-green-300/70"
+                              style={{ width: px(gateLeaf) }}
+                            >
+                              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-green-900">
+                                {gateHasLeftPanel && gateHasRightPanel ? "GATE" : "WALL-GATE"}
+                              </div>
+                              <div
+                                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${gate.hingeOnLeft ? "left-0" : "right-0"}`}
+                                style={{ width: px(0), height: "100%" }}
+                              >
+                                <div className="relative h-full w-[6px]">
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                          gateBlocks.push(
+                            renderGapSegment(
+                              "hinge",
+                              hingeGapWidth,
+                              !gateHasRightPanel,
+                              `hinge-gap-${j}`
+                            )
+                          );
+                        }
+                        elements.push(...gateBlocks.filter(Boolean));
+                      }
 
-                      // Latch gap after gate: 10mm, unless wall latch -> 7.5mm
-                      if (isWallToGlassLatch) {
-                        blocks.push(
-                          <div key={`latch-wall-gap-${j}`} className="shrink-0" style={{ width: px(7.5) }}>
-                            <div className="h-full bg-orange-200 border border-orange-400" />
-                          </div>
-                        );
-                      } else {
-                        blocks.push(
-                          <div key={`latch-gap-${j}`} className="shrink-0" style={{ width: px(10) }}>
-                            <div className="h-full bg-orange-200 border border-orange-400" />
-                          </div>
+                      elements.push(panelEl);
+
+                      if (!skipGapAfter) {
+                        elements.push(
+                          <div key={`gap-${j}`} style={{ width: px(layout.gap) }} />
                         );
                       }
 
-                      // Always render current panel j, then the gate sequence; do NOT render the usual gap here
-                      return (
-                        <React.Fragment key={j}>
-                          {panelEl}
-                          {blocks}
-                        </React.Fragment>
-                      );
+                      return <React.Fragment key={j}>{elements}</React.Fragment>;
                     })}
                   </div>
                 </div>
@@ -224,7 +334,23 @@ export default function SideVisuals() {
                 <div className="mb-2 text-[11px] font-medium text-slate-700">
                   Position:
                   <span className="ml-1 rounded bg-white px-2 py-0.5 text-sky-700 ring-1 ring-sky-200">
-                    Hinge: Panel {gate.hingeOnLeft ? gate.panelIndex + 1 : gate.panelIndex + 2}, Gate: Panel {gate.hingeOnLeft ? gate.panelIndex + 2 : gate.panelIndex + 1}
+                    {(() => {
+                      const hingeLabel = (() => {
+                        if (!gate) return "";
+                        if (gate.hingeOnLeft) {
+                          return gateHasLeftPanel ? `Panel ${gateIndexRaw}` : "Wall";
+                        }
+                        return gateIndexRaw < totalPanels ? `Panel ${gateIndexRaw + 1}` : "Wall";
+                      })();
+                      const gateLabel = (() => {
+                        if (!gate) return "";
+                        if (gate.hingeOnLeft) {
+                          return gateIndexRaw < totalPanels ? `Panel ${gateIndexRaw + 1}` : "Wall";
+                        }
+                        return gateHasLeftPanel ? `Panel ${gateIndexRaw}` : "Wall";
+                      })();
+                      return `Hinge: ${hingeLabel}, Gate: ${gateLabel}`;
+                    })()}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
