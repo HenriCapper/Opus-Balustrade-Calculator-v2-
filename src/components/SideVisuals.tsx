@@ -257,8 +257,8 @@ export default function SideVisuals() {
                                 style={{ width: px(0), height: "100%" }}
                               >
                                 <div className="relative h-full w-[6px]">
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "10%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "90%" }} />
                                 </div>
                               </div>
                                <div
@@ -266,7 +266,7 @@ export default function SideVisuals() {
                                 style={{ width: px(0), height: "100%" }}
                               >
                                 <div className="relative h-full w-[6px]">
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
                                 </div>
                               </div>
                             </div>
@@ -302,8 +302,8 @@ export default function SideVisuals() {
                                 style={{ width: px(0), height: "100%" }}
                               >
                                 <div className="relative h-full w-[6px]">
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "10%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "90%" }} />
                                 </div>
                               </div>
                               <div
@@ -311,7 +311,7 @@ export default function SideVisuals() {
                                 style={{ width: px(0), height: "100%" }}
                               >
                                 <div className="relative h-full w-[6px]">
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
                                 </div>
                               </div>
                               

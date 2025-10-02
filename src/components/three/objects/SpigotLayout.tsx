@@ -460,7 +460,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const hingeBlockDepthM = Math.max(0.016, thicknessM + 0.004); // slightly thicker than glass to protrude
   const hingeInsetM = 0.003; // small inset from the edge
   const hingeX = (g.hingeOnLeft ? 1 : -1) * (widthM / 2 - hingeBlockWidthM / 2 - hingeInsetM);
-  const hingeYPositions = [0.25, 0.5, 0.75];
+  const hingeYPositions = [0.10, 0.70, 0.90];
         return (
           <group key={`gate-${i}`}>
             <mesh
