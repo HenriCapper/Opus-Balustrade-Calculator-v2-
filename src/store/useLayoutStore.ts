@@ -30,6 +30,12 @@ export interface Ps1ResultRow {
   meta?: Record<string, unknown>;
 }
 
+export interface OrderListItem {
+  code: string;
+  description: string;
+  quantity: number;
+}
+
 export interface LayoutCalculationResult {
   totalRun: number; // mm
   sideRuns: number[]; // mm per side used
@@ -57,6 +63,8 @@ export interface LayoutCalculationResult {
   }[];
   // Global gate leaf width echoed into result for consumers (SideVisuals/3D)
   gateLeafWidth?: number;
+  // Structured order list (when available)
+  orderItems?: OrderListItem[];
 }
 
 export interface LayoutState {

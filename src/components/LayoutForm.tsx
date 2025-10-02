@@ -1,7 +1,7 @@
 import { useSelectionStore } from "@/store/useSelectionStore";
 import Button from "@/components/ui/Button";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { useLayoutStore } from "@/store/useLayoutStore";
+import { useLayoutStore, type LayoutCalculationInput, type LayoutCalculationResult } from "@/store/useLayoutStore";
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
 import { lookupChannelPs1 } from "@/data/channelPs1";
@@ -12,6 +12,8 @@ import { CALC_OPTION_MAP, detectCalcKey, type CalcKey } from "@/data/calcOptions
 import FieldGroup from "@/components/ui/FieldGroup";
 import CompliantLayout from "@/components/CompliantLayout";
 import SideVisuals from "@/components/SideVisuals";
+import OrderList from "@/components/OrderList";
+import { computeOrderList } from "@/data/orderLists";
 export default function LayoutForm() {
   const clear = useSelectionStore((s) => s.clearSelected);
   const shape = useSelectionStore((s) => s.selected);
@@ -302,12 +304,14 @@ export default function LayoutForm() {
     } else {
       if (!usedSides.length) return; // no lengths entered yet
     }
+    const resolvedCalcKey = calcKey;
+    if (!resolvedCalcKey) return;
     // Lookup PS1 row (spigots vs standoffs vs channels)
-    const isStandoffs = calcKey === 'sd50' || calcKey === 'pf150' || calcKey === 'sd100' || calcKey === 'pradis';
-    const isChannel = calcKey === 'smartlock_top' || calcKey === 'smartlock_side' || calcKey === 'lugano' || calcKey === 'vista';
+    const isStandoffs = resolvedCalcKey === 'sd50' || resolvedCalcKey === 'pf150' || resolvedCalcKey === 'sd100' || resolvedCalcKey === 'pradis';
+    const isChannel = resolvedCalcKey === 'smartlock_top' || resolvedCalcKey === 'smartlock_side' || resolvedCalcKey === 'lugano' || resolvedCalcKey === 'vista';
     const ps1 = isStandoffs
       ? lookupStandoffsPs1(
-          calcKey,
+          resolvedCalcKey,
           fenceType,
           glassThickness,
           glassHeight,
@@ -316,13 +320,13 @@ export default function LayoutForm() {
         )
       : isChannel
         ? lookupChannelPs1(
-            calcKey,
+            resolvedCalcKey,
             fenceType,
             glassThickness,
             glassHeight,
             windZone || undefined,
           )
-        : lookupSpigotsPs1(calcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
+        : lookupSpigotsPs1(resolvedCalcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
   const totalRun = usedSides.reduce((a,b)=>a+b,0);
   let estimatedSpigots: number | undefined;
   let estimatedPanels: number | undefined;
@@ -438,11 +442,11 @@ export default function LayoutForm() {
     } else {
       notes.push('No PS1 row found for selected parameters (placeholder calculation).');
     }
-    setLayout({
+    const layoutInput: LayoutCalculationInput = {
       system,
-      calcKey,
+      calcKey: resolvedCalcKey,
       shape,
-  sideLengths: usedSides,
+      sideLengths: usedSides,
       ...(shape === 'custom' ? { customVectors: customRuns.map(r => ({ dx: r.dx, dy: r.dy, length: r.length, id: r.id })) } : {}),
       fenceType,
       fixingType,
@@ -455,19 +459,25 @@ export default function LayoutForm() {
       allowMixedSizes,
       spigotsPerPanel,
       finish,
-    }, {
+    };
+
+    const layoutResultData: LayoutCalculationResult = {
       totalRun,
       sideRuns: usedSides,
-  ps1: ps1 ? { internal: ps1.internal, edge: ps1.edge, source: (calcKey as unknown as 'sp10'|'sp12'|'sp13') } : null,
-  estimatedSpigots,
-  estimatedPanels,
-  panelsSummary,
-  totalSpigots,
+      ps1: ps1 ? { internal: ps1.internal, edge: ps1.edge, source: (resolvedCalcKey as unknown as 'sp10' | 'sp12' | 'sp13') } : null,
+      estimatedSpigots,
+      estimatedPanels,
+      panelsSummary,
+      totalSpigots,
       sidePanelLayouts,
       allPanels,
       notes,
       sideGatesRender,
-    });
+    };
+
+    const orderItems = computeOrderList(resolvedCalcKey, layoutInput, layoutResultData);
+
+    setLayout(layoutInput, { ...layoutResultData, orderItems });
   }
 
   const hasResult = !!layoutResult;
@@ -740,8 +750,9 @@ export default function LayoutForm() {
         </div>
       </form>
       {hasResult && (
-        <div className="mt-8">
+        <div className="mt-8 space-y-6">
           <CompliantLayout />
+          <OrderList />
           <SideVisuals />
         </div>
       )}
