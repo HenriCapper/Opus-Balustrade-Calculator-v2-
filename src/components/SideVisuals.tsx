@@ -258,8 +258,15 @@ export default function SideVisuals() {
                               >
                                 <div className="relative h-full w-[6px]">
                                   <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
                                   <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
+                                </div>
+                              </div>
+                               <div
+                                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${gate.hingeOnLeft ? "right-0" : "left-0"}`}
+                                style={{ width: px(0), height: "100%" }}
+                              >
+                                <div className="relative h-full w-[6px]">
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
                                 </div>
                               </div>
                             </div>
@@ -296,10 +303,18 @@ export default function SideVisuals() {
                               >
                                 <div className="relative h-full w-[6px]">
                                   <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "30%" }} />
-                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
                                   <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "70%" }} />
                                 </div>
                               </div>
+                              <div
+                                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${gate.hingeOnLeft ? "right-0" : "left-0"}`}
+                                style={{ width: px(0), height: "100%" }}
+                              >
+                                <div className="relative h-full w-[6px]">
+                                  <div className="absolute left-0 h-2 w-[6px] -translate-x-1/2 -translate-y-1/2 rounded bg-black" style={{ top: "50%" }} />
+                                </div>
+                              </div>
+                              
                             </div>
                           );
                           gateBlocks.push(
