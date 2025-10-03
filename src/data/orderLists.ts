@@ -5,7 +5,7 @@ import type {
 } from '@/store/useLayoutStore';
 import type { CalcKey } from '@/data/calcOptions';
 
-type FinishCode = 'SS' | 'PS' | 'BK' | 'PC';
+type FinishCode = 'SS' | 'PS' | 'BK' | 'PC' | 'MILL';
 
 type BuildContext = {
   calcKey: CalcKey;
@@ -24,6 +24,7 @@ const FINISH_CODE_MAP: Record<string, FinishCode> = {
   BK: 'BK',
   POWDERCOAT: 'PC',
   PC: 'PC',
+  MILL: 'MILL',
 };
 
 const SP12_FIXING_KITS: Record<string, string> = {
@@ -102,6 +103,15 @@ const BASE_DESCRIPTIONS: Record<string, string> = {
   SL120S17: 'Smart Lock Channel Side Fix Kit – 17.52mm Glass (3.0m)',
   SL120S19: 'Smart Lock Channel Side Fix Kit – 19mm Glass (3.0m)',
   SL120S21: 'Smart Lock Channel Side Fix Kit – 21.52mm Glass (3.0m)',
+  'SLCFIX-1': 'Smart Lock Concrete Fixing Kit (Top Fix)',
+  'SLCFIX-2': 'Smart Lock Concrete Fixing Kit (Side Fix)',
+  'SLSFIX-1': 'Smart Lock Steel Fixing Kit (Top Fix)',
+  'SLSFIX-2': 'Smart Lock Steel Fixing Kit (Side Fix)',
+  'SLTSFIX-1': 'Smart Lock Timber Coach Screw Fixing Kit (Top Fix)',
+  'SLTSFIX-2': 'Smart Lock Timber Coach Screw Fixing Kit (Side Fix)',
+  'SLTBFIX-1': 'Smart Lock Timber Bolt Through Fixing Kit (Top Fix)',
+  'SLTBFIX-2': 'Smart Lock Timber Bolt Through Fixing Kit (Side Fix)',
+  SLECB: 'Smart Lock Channel Endcap',
   'LC48KIT1-L': 'Lugano Channel Kit 4.8m – 12mm Glass Timber Lag Fix',
   'LC48KIT1-T': 'Lugano Channel Kit 4.8m – 12mm Glass Timber Bolt Through Fix',
   'LC48KIT1-C': 'Lugano Channel Kit 4.8m – 12mm Glass Concrete Fix',
@@ -185,6 +195,22 @@ const SMARTLOCK_SIDE_CODES: Record<string, string> = {
   '19': 'SL120S19',
   '21.52': 'SL120S21',
 };
+
+const SMARTLOCK_TOP_FIX_KITS: Record<string, string> = {
+  Concrete: 'SLCFIX-1',
+  Steel: 'SLSFIX-1',
+  'Timber (Coach Screw)': 'SLTSFIX-1',
+  'Timber (Bolt Through)': 'SLTBFIX-1',
+};
+
+const SMARTLOCK_SIDE_FIX_KITS: Record<string, string> = {
+  Concrete: 'SLCFIX-2',
+  Steel: 'SLSFIX-2',
+  'Timber (Coach Screw)': 'SLTSFIX-2',
+  'Timber (Bolt Through)': 'SLTBFIX-2',
+};
+
+const SMARTLOCK_FIXINGS_PER_METRE = 5;
 
 const LUGANO_KIT_CODES: Record<string, Record<string, string>> = {
   '12': {
@@ -445,25 +471,48 @@ function buildSd100OrderList({ input, result }: BuildContext): OrderListItem[] {
 }
 
 function buildSmartLockTopOrderList(ctx: BuildContext): OrderListItem[] {
-  return buildSmartLockOrderList(ctx, SMARTLOCK_BASE_CODES);
+  return buildSmartLockOrderList(ctx, SMARTLOCK_BASE_CODES, SMARTLOCK_TOP_FIX_KITS);
 }
 
 function buildSmartLockSideOrderList(ctx: BuildContext): OrderListItem[] {
-  return buildSmartLockOrderList(ctx, SMARTLOCK_SIDE_CODES);
+  return buildSmartLockOrderList(ctx, SMARTLOCK_SIDE_CODES, SMARTLOCK_SIDE_FIX_KITS);
 }
 
 function buildSmartLockOrderList(
   { input, result }: BuildContext,
   codeMap: Record<string, string>,
+  fixKitMap: Record<string, string>,
 ): OrderListItem[] {
   const items: OrderListItem[] = [];
   const thickness = normaliseThickness(input.glassThickness);
   if (!thickness) return items;
-  const code = codeMap[thickness];
-  if (!code) return items;
-  const qty = kitQuantity(result.totalRun, SMARTLOCK_KIT_LENGTH_MM);
-  if (qty <= 0) return items;
-  pushItem(items, code, qty);
+  const baseCode = codeMap[thickness];
+  if (!baseCode) return items;
+
+  const finishCode = normaliseFinish(input.finish);
+  const kitQty = kitQuantity(result.totalRun, SMARTLOCK_KIT_LENGTH_MM);
+  if (kitQty > 0) {
+    pushItem(items, `${baseCode}${smartLockKitSuffix(finishCode)}`, kitQty);
+  }
+
+  const fixKitCode = resolveSmartLockFixKit(input.fixingType, fixKitMap);
+  const fixKitQty = smartLockFixKitQuantity(result.totalRun);
+  if (fixKitCode && fixKitQty > 0) {
+    pushItem(items, fixKitCode, fixKitQty);
+  }
+
+  const gateHardware = tallyGateHardware(result);
+  appendHandrailItems(items, input, result, finishCode, gateHardware.totalGates);
+
+  if (gateHardware.totalGates > 0) {
+    pushItem(items, `SLECB${smartLockChannelSuffix(finishCode)}`, gateHardware.totalGates * 2);
+  }
+
+  if (gateHardware.hingeGlass > 0) pushItem(items, 'ASC180', gateHardware.hingeGlass);
+  if (gateHardware.hingeWall > 0) pushItem(items, 'ASC90', gateHardware.hingeWall);
+  if (gateHardware.latchGlass > 0) pushItem(items, 'PL180GG', gateHardware.latchGlass);
+  if (gateHardware.latchWall > 0) pushItem(items, 'PL090WG', gateHardware.latchWall);
+
   return items;
 }
 
@@ -480,6 +529,16 @@ function buildLuganoOrderList({ input, result }: BuildContext): OrderListItem[] 
   const qty = kitQuantity(result.totalRun, CHANNEL_KIT_LENGTH_MM);
   if (qty <= 0) return items;
   pushItem(items, code, qty);
+
+  const finishCode = normaliseFinish(input.finish);
+  const gateHardware = tallyGateHardware(result);
+  appendHandrailItems(items, input, result, finishCode, gateHardware.totalGates);
+
+  if (gateHardware.hingeGlass > 0) pushItem(items, 'ASC180', gateHardware.hingeGlass);
+  if (gateHardware.hingeWall > 0) pushItem(items, 'ASC90', gateHardware.hingeWall);
+  if (gateHardware.latchGlass > 0) pushItem(items, 'PL180GG', gateHardware.latchGlass);
+  if (gateHardware.latchWall > 0) pushItem(items, 'PL090WG', gateHardware.latchWall);
+
   return items;
 }
 
@@ -495,6 +554,16 @@ function buildVistaOrderList({ input, result }: BuildContext): OrderListItem[] {
   const qty = kitQuantity(result.totalRun, CHANNEL_KIT_LENGTH_MM);
   if (qty <= 0) return items;
   pushItem(items, code, qty);
+
+  const finishCode = normaliseFinish(input.finish);
+  const gateHardware = tallyGateHardware(result);
+  appendHandrailItems(items, input, result, finishCode, gateHardware.totalGates);
+
+  if (gateHardware.hingeGlass > 0) pushItem(items, 'ASC180', gateHardware.hingeGlass);
+  if (gateHardware.hingeWall > 0) pushItem(items, 'ASC90', gateHardware.hingeWall);
+  if (gateHardware.latchGlass > 0) pushItem(items, 'PL180GG', gateHardware.latchGlass);
+  if (gateHardware.latchWall > 0) pushItem(items, 'PL090WG', gateHardware.latchWall);
+
   return items;
 }
 
@@ -588,6 +657,34 @@ function powdercoatChargeCode(base: string, color?: string | null): string {
   return `${base} (${trimmed})`;
 }
 
+function smartLockKitSuffix(finish: FinishCode): string {
+  switch (finish) {
+    case 'BK':
+      return '-BK';
+    case 'MILL':
+      return '-MILL';
+    case 'PC':
+      return '-MILL';
+    case 'PS':
+      return '-PS';
+    default:
+      return '-SS';
+  }
+}
+
+function smartLockChannelSuffix(finish: FinishCode): string {
+  if (finish === 'PC' || finish === 'MILL') return '-MILL';
+  if (finish === 'BK') return '-BK';
+  if (finish === 'PS') return '-PS';
+  return '-SS';
+}
+
+function smartLockFixKitQuantity(totalRunMm: number | null | undefined): number {
+  const run = typeof totalRunMm === 'number' ? totalRunMm : Number(totalRunMm ?? 0);
+  if (!Number.isFinite(run) || run <= 0) return 0;
+  return Math.ceil((run / 1000) * SMARTLOCK_FIXINGS_PER_METRE);
+}
+
 function pushItem(items: OrderListItem[], code: string, quantity: number) {
   const qty = Number(quantity);
   if (!code || Number.isNaN(qty) || qty <= 0) return;
@@ -641,6 +738,15 @@ function resolvePf150FixKit(raw?: string | null): string | null {
   if (PF150_FIX_KITS[trimmed]) return PF150_FIX_KITS[trimmed];
   const match = Object.entries(PF150_FIX_KITS).find(([label]) => label.toLowerCase() === trimmed.toLowerCase());
   return match ? match[1] : null;
+}
+
+function resolveSmartLockFixKit(
+  raw: string | null | undefined,
+  fixKitMap: Record<string, string>,
+): string | null {
+  const normalised = normaliseFixingType(raw);
+  if (!normalised) return null;
+  return fixKitMap[normalised] ?? null;
 }
 
 function kitQuantity(totalRunMm: number | null | undefined, kitLengthMm: number): number {
