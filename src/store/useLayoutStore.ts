@@ -21,6 +21,9 @@ export interface LayoutCalculationInput {
   finish?: string;
   // Global gate leaf width (mm) applied to any enabled gate on a side/run
   gateLeafWidth?: number; // default 890mm
+  discHead?: string | null;
+  extraPackers?: number | null;
+  powdercoatColor?: string | null;
 }
 
 export interface Ps1ResultRow {
