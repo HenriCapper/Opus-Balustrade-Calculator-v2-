@@ -51,6 +51,9 @@ export default function LayoutForm() {
   const [handrail, setHandrail] = useState<string>('none');
   const [handrailLocked, setHandrailLocked] = useState<boolean>(false);
   const [handrailError, setHandrailError] = useState<string | null>(null);
+  const [discHead, setDiscHead] = useState<string | undefined>(undefined);
+  const [extraPackers, setExtraPackers] = useState<string>('0');
+  const [powdercoatColor, setPowdercoatColor] = useState<string>('');
 
   // Sync fenceType when optionSets changes
   useEffect(() => {
@@ -102,6 +105,35 @@ export default function LayoutForm() {
     return list;
   }, [optionSets, fenceCategory, glassThickness]);
 
+  const discHeadOptions = useMemo(() => {
+    if (calcKey === 'sd50') {
+      return [
+        { value: 'SD50-SH', label: 'Screw Head' },
+        { value: 'SD50-FH', label: 'Flat Head' },
+        { value: 'SD50-BH', label: 'Bevelled Head' },
+        { value: 'ASD50-SH', label: 'Adjustable Screw Head' },
+      ];
+    }
+    if (calcKey === 'pf150') {
+      return [
+        { value: 'PF150', label: 'Standard Clamp' },
+        { value: 'PF150R', label: 'Concealed Clamp' },
+        { value: 'PF150S', label: 'Square Clamp' },
+      ];
+    }
+    return [] as { value: string; label: string }[];
+  }, [calcKey]);
+
+  const showExtraPackers = useMemo(() => {
+    return calcKey ? ['sd50', 'sd100', 'pf150'].includes(calcKey) : false;
+  }, [calcKey]);
+
+  const parsedExtraPackers = useMemo(() => {
+    const parsed = parseInt(extraPackers, 10);
+    if (Number.isNaN(parsed) || parsed < 0) return 0;
+    return parsed;
+  }, [extraPackers]);
+
   // Enforce handrail rules based on glass thickness & fence category
   useEffect(() => {
     if (!glassThickness) return;
@@ -146,6 +178,23 @@ export default function LayoutForm() {
       else setHandrail('none');
     }
   }, [filteredHandrails, fenceCategory, handrail]);
+
+  useEffect(() => {
+    if (!discHeadOptions.length) {
+      setDiscHead(undefined);
+      return;
+    }
+    if (!discHeadOptions.some((opt) => opt.value === discHead)) {
+      setDiscHead(discHeadOptions[0]?.value);
+    }
+  }, [discHeadOptions, discHead]);
+
+  useEffect(() => {
+    if (!showExtraPackers) {
+      setExtraPackers('0');
+    }
+  }, [showExtraPackers]);
+
 
   
 
@@ -239,6 +288,15 @@ export default function LayoutForm() {
   const [glassHeight, setGlassHeight] = useState<number | undefined>(defaultHeight);
   const [fixingType, setFixingType] = useState<string | undefined>(undefined);
   const [finish, setFinish] = useState<string | undefined>(undefined);
+  const showPowdercoatColor = useMemo(() => {
+    return finish ? finish.toLowerCase().includes('powder') : false;
+  }, [finish]);
+
+  useEffect(() => {
+    if (!showPowdercoatColor) {
+      setPowdercoatColor('');
+    }
+  }, [showPowdercoatColor]);
 
   // Enforce pool fence glass thickness rules and force 15mm in extra high wind zone
   useEffect(() => {
@@ -442,6 +500,9 @@ export default function LayoutForm() {
     } else {
       notes.push('No PS1 row found for selected parameters (placeholder calculation).');
     }
+    const resolvedDiscHead = discHeadOptions.length ? (discHead || discHeadOptions[0]?.value) : undefined;
+    const resolvedPowdercoatColor = showPowdercoatColor ? powdercoatColor.trim() : '';
+    const resolvedExtraPackers = showExtraPackers ? parsedExtraPackers : 0;
     const layoutInput: LayoutCalculationInput = {
       system,
       calcKey: resolvedCalcKey,
@@ -459,6 +520,9 @@ export default function LayoutForm() {
       allowMixedSizes,
       spigotsPerPanel,
       finish,
+      discHead: resolvedDiscHead ?? null,
+      extraPackers: resolvedExtraPackers,
+      powdercoatColor: resolvedPowdercoatColor ? resolvedPowdercoatColor : null,
     };
 
     const layoutResultData: LayoutCalculationResult = {
@@ -654,6 +718,59 @@ export default function LayoutForm() {
             ))}
           </select>
         </FieldGroup>
+
+        {discHeadOptions.length > 0 && (
+          <FieldGroup>
+            <label className="text-xs font-medium text-slate-500">Disc / clamp head</label>
+            <select
+              value={discHead || discHeadOptions[0]?.value}
+              onChange={(e) => setDiscHead(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+            >
+              {discHeadOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FieldGroup>
+        )}
+
+        {showExtraPackers && (
+          <FieldGroup>
+            <label className="text-xs font-medium text-slate-500">Extra packers</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={extraPackers}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next === '') {
+                  setExtraPackers('');
+                  return;
+                }
+                const parsed = parseInt(next, 10);
+                if (Number.isNaN(parsed) || parsed < 0) return;
+                setExtraPackers(String(parsed));
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">Optional gasket packers supplied on top of calculated quantity.</p>
+          </FieldGroup>
+        )}
+
+        {showPowdercoatColor && (
+          <FieldGroup>
+            <label className="text-xs font-medium text-slate-500">Powdercoat colour</label>
+            <input
+              type="text"
+              value={powdercoatColor}
+              onChange={(e) => setPowdercoatColor(e.target.value)}
+              placeholder="e.g. Matt Black, Surfmist"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">Shown on powdercoat charge lines in the order list.</p>
+          </FieldGroup>
+        )}
 
         {/* Glass Mode */}
         <FieldGroup>

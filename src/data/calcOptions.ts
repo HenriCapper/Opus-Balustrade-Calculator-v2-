@@ -63,7 +63,7 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
       { value: 'S40', label: 'S40' },
       { value: 'R40', label: 'R40' },
     ],
-    finishes: ['SSS', 'Black'],
+  finishes: ['SSS', 'Black', 'Powdercoat'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
   sp13: {
@@ -80,7 +80,7 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
       { value: 'S40', label: 'S40' },
       { value: 'R40', label: 'R40' },
     ],
-    finishes: ['SSS', 'Black'],
+  finishes: ['SSS', 'Black', 'Powdercoat'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
   sp14: {
@@ -97,7 +97,7 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
       { value: 'S40', label: 'S40' },
       { value: 'R40', label: 'R40' },
     ],
-    finishes: ['SSS', 'Black'],
+  finishes: ['SSS', 'Black', 'Powdercoat'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
   sp15: {
@@ -114,7 +114,7 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
       { value: 'S40', label: 'S40' },
       { value: 'R40', label: 'R40' },
     ],
-    finishes: ['SSS', 'Black'],
+  finishes: ['SSS', 'Black', 'Powdercoat'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
   rmp160: {
