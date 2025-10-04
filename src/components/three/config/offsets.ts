@@ -22,7 +22,7 @@ export const GROUND_Y_OFFSETS_MM: Record<string, number> = {
   SP15: -31,
   RMP160: -41,
   SMP160: -41,
-  SD50: -200
+  SD50: -300
 };
 
 export const MODEL_XZ_OFFSETS_MM: Record<string, { x?: number; z?: number }> = {
@@ -38,7 +38,7 @@ export interface WallRenderConfig {
 
 export const MODEL_WALL_CONFIG: Record<string, WallRenderConfig> = {
   SP13: { offsetMm: 58, centerYMm: -286.5 },
-  SD50: { offsetMm: 75, centerYMm: 0 },
+  SD50: { offsetMm: 75, centerYMm: -50 },
   SD75: { offsetMm: 45, centerYMm: -286.5 },
   SD100: { offsetMm: 45, centerYMm: -286.5 },
   PF150: { offsetMm: 45, centerYMm: -286.5 },
