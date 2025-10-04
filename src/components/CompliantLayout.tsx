@@ -8,10 +8,38 @@ export default function CompliantLayout(){
   const navigate = useNavigate();
   if(!input || !result) return null;
   const { ps1 } = result;
+  
+  // Detect if this is a post system
+  const isPostSystem = input.system === 'posts' || input.calcKey === 'resolute' || input.calcKey === 'vortex';
+  const hardwareLabel = isPostSystem ? 'Posts' : 'Spigots';
+  
   // Derive dynamic overrides when user forces spigots per panel ("2" or "3") after calculation
   let panelsSummary = result.panelsSummary;
-  let totalSpigots = result.totalSpigots;
-  if (input.system === 'spigots' && result.allPanels && result.allPanels.length && input.spigotsPerPanel && input.spigotsPerPanel !== 'auto') {
+  let totalHardware = result.totalSpigots;
+  
+  if (isPostSystem && result.allPanels && result.allPanels.length) {
+    // Post system calculation: 1 post for ≤600mm panels, 2 posts for >600mm panels
+    const groups: Record<string,{count:number;width:number;}> = {};
+    result.allPanels.forEach(w => {
+      const key = w.toFixed(2);
+      if(!groups[key]) groups[key] = { count:0, width:w };
+      groups[key].count++;
+    });
+    
+    panelsSummary = Object.values(groups)
+      .sort((a,b)=> b.width - a.width)
+      .map(g => {
+        const postsPerPanel = g.width <= 600 ? 1 : 2;
+        return `${g.count} × @${g.width.toFixed(2)} mm (${postsPerPanel} post${postsPerPanel > 1 ? 's' : ''} each)`;
+      })
+      .join('<br>');
+    
+    // Calculate total posts based on panel widths
+    totalHardware = result.allPanels.reduce((total, width) => {
+      return total + (width <= 600 ? 1 : 2);
+    }, 0);
+  } else if (input.system === 'spigots' && result.allPanels && result.allPanels.length && input.spigotsPerPanel && input.spigotsPerPanel !== 'auto') {
+    // Spigot system with forced spigots per panel
     const forced = parseInt(input.spigotsPerPanel, 10);
     if (!isNaN(forced)) {
       const groups: Record<string,{count:number;width:number;}> = {};
@@ -24,7 +52,7 @@ export default function CompliantLayout(){
         .sort((a,b)=> b.width - a.width)
         .map(g => `${g.count} × @${g.width.toFixed(2)} mm (${forced} spigots each)`) // mimic legacy formatting
         .join('<br>');
-      totalSpigots = forced * result.allPanels.length;
+      totalHardware = forced * result.allPanels.length;
     }
   }
   return (
@@ -47,10 +75,10 @@ export default function CompliantLayout(){
                 <td className="px-3 py-2" dangerouslySetInnerHTML={{__html: panelsSummary}} />
               </tr>
             )}
-            {typeof totalSpigots === 'number' && (
+            {typeof totalHardware === 'number' && (
               <tr className="border-b">
-                <th className="bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Spigots</th>
-                <td className="px-3 py-2">{totalSpigots}</td>
+                <th className="bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">{hardwareLabel}</th>
+                <td className="px-3 py-2">{totalHardware}</td>
               </tr>
             )}
             {ps1 && (
