@@ -5,6 +5,7 @@ import { useLayoutStore, type LayoutCalculationInput, type LayoutCalculationResu
 import { lookupSpigotsPs1 } from "@/data/spigotsPs1";
 import { lookupStandoffsPs1 } from "@/data/standoffsPs1";
 import { lookupChannelPs1 } from "@/data/channelPs1";
+import { lookupPostsPs1 } from "@/data/postsPs1";
 import { solveSymmetric, aggregatePanels, findBestLayout, findGateAdjustedLayout } from "@/data/panelSolver";
 import ShapeDiagram from "@/components/ShapeDiagram";
 import CustomShapeDesigner from "@/components/CustomShapeDesigner";
@@ -364,9 +365,10 @@ export default function LayoutForm() {
     }
     const resolvedCalcKey = calcKey;
     if (!resolvedCalcKey) return;
-    // Lookup PS1 row (spigots vs standoffs vs channels)
+    // Lookup PS1 row (spigots vs standoffs vs channels vs posts)
     const isStandoffs = resolvedCalcKey === 'sd50' || resolvedCalcKey === 'pf150' || resolvedCalcKey === 'sd100' || resolvedCalcKey === 'pradis';
     const isChannel = resolvedCalcKey === 'smartlock_top' || resolvedCalcKey === 'smartlock_side' || resolvedCalcKey === 'lugano' || resolvedCalcKey === 'vista';
+    const isPost = resolvedCalcKey === 'resolute' || resolvedCalcKey === 'vortex';
     const ps1 = isStandoffs
       ? lookupStandoffsPs1(
           resolvedCalcKey,
@@ -384,7 +386,16 @@ export default function LayoutForm() {
             glassHeight,
             windZone || undefined,
           )
-        : lookupSpigotsPs1(resolvedCalcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
+        : isPost
+          ? lookupPostsPs1(
+              resolvedCalcKey as 'resolute' | 'vortex',
+              fenceType,
+              glassThickness,
+              glassHeight,
+              windZone || undefined,
+              fixingType,
+            )
+          : lookupSpigotsPs1(resolvedCalcKey, fenceType, glassThickness, glassHeight, windZone || undefined);
   const totalRun = usedSides.reduce((a,b)=>a+b,0);
   let estimatedSpigots: number | undefined;
   let estimatedPanels: number | undefined;

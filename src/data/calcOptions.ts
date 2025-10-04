@@ -18,7 +18,9 @@ export type CalcKey =
   | 'smartlock_top'
   | 'smartlock_side'
   | 'lugano'
-  | 'vista';
+  | 'vista'
+  | 'resolute'
+  | 'vortex';
 
 export interface DynamicSets {
   fenceTypes: { value: string; label: string }[];
@@ -316,6 +318,40 @@ export const CALC_OPTION_MAP: Record<CalcKey, DynamicSets> = {
     finishes: ['mill', 'Black', 'Powdercoat'],
     fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
   },
+  // Post systems
+  resolute: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade (1000–2000)' },
+      { value: 'pool', label: 'Pool Fence (1200–1300)' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000],
+    glassThicknesses: ['10', '11.2', '12', '13.2', '13.52', '15', '17.2', '17.52'],
+    handrails: [
+      { value: 'ST50H', label: 'ST50H' },
+      { value: 'RT50H', label: 'RT50H' },
+      { value: 'S40', label: 'S40' },
+      { value: 'AH40', label: 'AH40' },
+      { value: 'R40', label: 'R40' },
+    ],
+    finishes: ['Mill', 'Powdercoat'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
+  vortex: {
+    fenceTypes: [
+      { value: 'balustrade', label: 'Balustrade (1000–1500)' },
+      { value: 'pool', label: 'Pool Fence (1200–1300)' },
+    ],
+    windZones: ['L', 'M', 'H', 'VH', 'EH'],
+    glassHeights: [1000, 1100, 1200, 1250, 1300, 1400, 1500],
+    glassThicknesses: ['8', '10', '11.2', '12', '13.2', '13.52', '15', '17.52'],
+    handrails: [
+      { value: 'VXSHR', label: 'Square Handrail' },
+      { value: 'VXRHR', label: 'Rounded Handrail' },
+    ],
+    finishes: ['Powdercoat', 'Silver', 'Black', 'Mill'],
+    fixingTypes: ['Concrete', 'Steel', 'Timber (Coach Screw)', 'Timber (Bolt Through)'],
+  },
 };
 
 export function detectCalcKey(raw: string | undefined, system: string | null): CalcKey | null {
@@ -345,6 +381,11 @@ export function detectCalcKey(raw: string | undefined, system: string | null): C
     if (lower.includes('smart-top')) return 'smartlock_top';
     if (lower.includes('lugano')) return 'lugano';
     if (lower.includes('vista')) return 'vista';
+  }
+  // Post systems
+  if (system === 'posts') {
+    if (lower.includes('resolute')) return 'resolute';
+    if (lower.includes('vortex')) return 'vortex';
   }
   return null;
 }

@@ -35,9 +35,8 @@ const systems: SystemDef[] = [
   {
     key: 'posts',
     label: 'Post Systems',
-    desc: 'Coming Soon - Resolute and Vortex post systems',
+    desc: 'Resolute and Vortex post systems for structural glazing',
     img: postsImg,
-    disabled: true,
   },
 ]
 

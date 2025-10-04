@@ -128,8 +128,23 @@ function computeSpigotsForPanel(
   panelWidth: number,
   internal: number,
   edge: number,
-  mode: "auto" | "2" | "3"
+  mode: "auto" | "2" | "3",
+  isPostSystem: boolean = false
 ) {
+  // Post systems (Resolute/Vortex) use different logic:
+  // - Panels ≤600mm: 1 post at center
+  // - Panels >600mm: 2 posts at edges (edge distance from panel edges)
+  if (isPostSystem) {
+    if (panelWidth <= 600) {
+      // Single post at center
+      return [panelWidth / 2];
+    } else {
+      // Two posts: one at each edge distance from panel edges
+      return [edge, panelWidth - edge];
+    }
+  }
+  
+  // Standard spigot/standoff logic
   let needed = Math.max(2, Math.ceil((panelWidth - 2 * edge) / internal) + 1);
   if (mode === "2") needed = 2;
   else if (mode === "3") needed = Math.min(Math.max(3, needed), 3);
@@ -178,15 +193,19 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     spigots: SpigotItem[];
     segments: Segment[];
     glassHeight: number;
+    isPostSystem: boolean;
   } | null>(() => {
     if (!input || !result) return null;
-  const { sideLengths, glassHeight = 1100, customVectors } = input;
+  const { sideLengths, glassHeight = 1100, customVectors, calcKey, system } = input;
     if (!sideLengths || !sideLengths.length) return null;
     const ps1 = result.ps1;
     const segments = buildSegments(sideLengths, customVectors);
     const internal = ps1?.internal ?? 800;
     const edge = ps1?.edge ?? 250;
     const mode: "auto" | "2" | "3" = input.spigotsPerPanel || "auto";
+    
+    // Detect if this is a post system (Resolute or Vortex)
+    const isPostSystem = system === 'posts' || calcKey === 'resolute' || calcKey === 'vortex';
 
   const layouts = result.sidePanelLayouts;
   const gates = (result.sideGatesRender || []) as GateRenderMeta[];
@@ -245,7 +264,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             w,
             internal,
             edge,
-            mode
+            mode,
+            isPostSystem
           ).map((off) => startOff + off);
           panelMeshes.push({
             mid,
@@ -268,7 +288,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
           width,
           internal,
           edge,
-          mode
+          mode,
+          isPostSystem
         );
         panelMeshes.push({
           mid,
@@ -298,7 +319,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
       })
     );
 
-    return { panelMeshes, gateMeshes, spigots, segments, glassHeight };
+    return { panelMeshes, gateMeshes, spigots, segments, glassHeight, isPostSystem };
   }, [input, result]);
 
   if (!data) return null;
@@ -308,7 +329,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
     return isNaN(n) ? 12 : n;
   })();
   const thicknessM = glassThicknessMm * 0.001;
-  const { panelMeshes, gateMeshes, spigots, segments } = data;
+  const { panelMeshes, gateMeshes, spigots, segments, isPostSystem } = data;
   const xOffset = mmToMeters(MODEL_XZ_OFFSETS_MM[codeUpper]?.x ?? 0);
   const zOffset = mmToMeters(MODEL_XZ_OFFSETS_MM[codeUpper]?.z ?? 0);
   const baseSpigotY = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
@@ -518,33 +539,72 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             >{`${p.height} mm glass height`}</FacingText>
           );
         })()}
-      {spigots.flatMap((s: SpigotItem, i: number) => {
-        const scale = 0.001;
-        const x = s.position.x * scale + xOffset;
-        const z = s.position.z * scale + zOffset;
-        const baseModel = (
-          <Model
-            key={`${i}-base`}
-            kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
-            code={codeUpper}
-            position={[x, baseSpigotY, z]}
-            scale={0.65}
-            quaternion={s.quat}
-          />
-        );
-        if (!shouldDoubleSpigots) return [baseModel];
-        const duplicateModel = (
-          <Model
-            key={`${i}-double`}
-            kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
-            code={codeUpper}
-            position={[x, baseSpigotY + duplicateSpigotYOffset, z]}
-            scale={0.65}
-            quaternion={s.quat}
-          />
-        );
-        return [baseModel, duplicateModel];
-      })}
+      {isPostSystem ? (
+        // Render cylindrical posts for post systems (Resolute/Vortex)
+        spigots.map((s: SpigotItem, i: number) => {
+          const scale = 0.001;
+          const x = s.position.x * scale;
+          const z = s.position.z * scale;
+          // Post dimensions based on legacy calculator:
+          // Radius: 0.04m (40mm), Height: 0.344m (344mm)
+          const postRadius = 0.04;
+          const postHeight = 0.344;
+          // Position post base at ground level (slightly raised for visibility)
+          const postY = 0.08 + postHeight / 2;
+          
+          // Offset posts slightly outward from glass for visibility
+          const dirUnit = s.quat.clone();
+          const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(dirUnit);
+          const offsetDist = 0.02; // 20mm offset
+          const offsetX = forward.x * offsetDist;
+          const offsetZ = forward.z * offsetDist;
+          
+          return (
+            <mesh
+              key={`post-${i}`}
+              position={[x + offsetX, postY, z + offsetZ]}
+              rotation={[0, 0, 0]} // Posts remain vertical
+              castShadow
+            >
+              <cylinderGeometry args={[postRadius, postRadius, postHeight, 16]} />
+              <meshStandardMaterial
+                color="#444444"
+                metalness={0.6}
+                roughness={0.4}
+              />
+            </mesh>
+          );
+        })
+      ) : (
+        // Render spigot/standoff/channel models for non-post systems
+        spigots.flatMap((s: SpigotItem, i: number) => {
+          const scale = 0.001;
+          const x = s.position.x * scale + xOffset;
+          const z = s.position.z * scale + zOffset;
+          const baseModel = (
+            <Model
+              key={`${i}-base`}
+              kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
+              code={codeUpper}
+              position={[x, baseSpigotY, z]}
+              scale={0.65}
+              quaternion={s.quat}
+            />
+          );
+          if (!shouldDoubleSpigots) return [baseModel];
+          const duplicateModel = (
+            <Model
+              key={`${i}-double`}
+              kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
+              code={codeUpper}
+              position={[x, baseSpigotY + duplicateSpigotYOffset, z]}
+              scale={0.65}
+              quaternion={s.quat}
+            />
+          );
+          return [baseModel, duplicateModel];
+        })
+      )}
     </group>
   );
 }

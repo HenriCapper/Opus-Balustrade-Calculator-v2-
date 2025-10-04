@@ -24,6 +24,11 @@ import sd75 from '@/assets/standoffs/SD75.jpg'
 import sd100 from '@/assets/standoffs/SD100.jpg'
 import pf150 from '@/assets/standoffs/PF150R.webp'
 import pradis from '@/assets/standoffs/Pradis.webp'
+
+// Post systems assets (using SP12 as placeholder for now)
+import resolute from '@/assets/spigots/SP12.webp'
+import vortex from '@/assets/spigots/SP12.webp'
+
 export type CalcItem = {
   key: string
   label: string
@@ -54,7 +59,10 @@ export const calculators: Record<SystemKey, CalcItem[]> = {
     { key: 'sd100', label: 'SD100 Single Disc', desc: 'Heavy-duty single disc system for demanding applications', img: sd100 },
     { key: 'pradis', label: 'Pradis Clamps', desc: 'Advanced clamping system for structural glazing', img: pradis },
   ],
-  posts: [],
+  posts: [
+    { key: 'resolute', label: 'Resolute Post System', desc: 'Professional fence design with Resolute posts - Base mounted post system', img: resolute },
+    { key: 'vortex', label: 'Vortex Side Mounted', desc: 'Professional fence design with Vortex side mounted posts - Advanced post system', img: vortex },
+  ],
 }
 
 export default function SystemCalculators() {
@@ -72,7 +80,7 @@ export default function SystemCalculators() {
     }
   }, [system, selectedCalc, setSelectedCalc])
 
-  if (!system || system === 'posts') return null
+  if (!system) return null
 
   const list = calculators[system]
   if (!list.length) return null

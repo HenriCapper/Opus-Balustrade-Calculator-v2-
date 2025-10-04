@@ -425,7 +425,7 @@ export default function ThreeDView() {
           {result && (
             <ul className="space-y-1">
               <li><span className="font-medium">Total Run:</span> {result.totalRun} mm</li>
-              {result.totalSpigots && <li><span className="font-medium">Spigots:</span> {result.totalSpigots}</li>}
+              {result.totalSpigots && <li><span className="font-medium">{input?.system === 'posts' ? 'Posts' : 'Spigots'}:</span> {result.totalSpigots}</li>}
               {result.panelsSummary && <li className="leading-snug" dangerouslySetInnerHTML={{ __html: result.panelsSummary }} />}
             </ul>
           )}
