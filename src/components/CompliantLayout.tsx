@@ -9,13 +9,29 @@ export default function CompliantLayout(){
   if(!input || !result) return null;
   const { ps1 } = result;
   
-  // Detect if this is a post system
+  // Detect system types for proper hardware labeling
   const isPostSystem = input.system === 'posts' || input.calcKey === 'resolute' || input.calcKey === 'vortex';
-  const hardwareLabel = isPostSystem ? 'Posts' : 'Spigots';
+  const isStandoffSystem = input.system === 'standoffs' || ['sd50', 'sd75', 'sd100', 'pf150', 'pradis'].includes(input.calcKey || '');
+  const isChannelSystem = input.system === 'channels';
+  const isSD50 = input.calcKey === 'sd50'; // SD50 has 2 discs per position
+  
+  const hardwareLabel = isPostSystem 
+    ? 'Posts' 
+    : isStandoffSystem 
+      ? 'Standoffs' 
+      : isChannelSystem 
+        ? 'Channels' 
+        : 'Spigots';
   
   // Derive dynamic overrides when user forces spigots per panel ("2" or "3") after calculation
   let panelsSummary = result.panelsSummary;
   let totalHardware = result.totalSpigots;
+  
+  // SD50 uses double discs: each mounting position has 2 physical discs
+  // The calculation counts positions, but we should show actual disc count
+  if (isSD50 && totalHardware) {
+    totalHardware = totalHardware * 2;
+  }
   
   if (isPostSystem && result.allPanels && result.allPanels.length) {
     // Post system calculation: 1 post for ≤600mm panels, 2 posts for >600mm panels

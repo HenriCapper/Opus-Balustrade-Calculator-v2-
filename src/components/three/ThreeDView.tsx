@@ -425,7 +425,16 @@ export default function ThreeDView() {
           {result && (
             <ul className="space-y-1">
               <li><span className="font-medium">Total Run:</span> {result.totalRun} mm</li>
-              {result.totalSpigots && <li><span className="font-medium">{input?.system === 'posts' ? 'Posts' : 'Spigots'}:</span> {result.totalSpigots}</li>}
+              {result.totalSpigots && (() => {
+                const isPost = input?.system === 'posts';
+                const isStandoff = input?.system === 'standoffs';
+                const isChannel = input?.system === 'channels';
+                const isSD50 = input?.calcKey === 'sd50';
+                const label = isPost ? 'Posts' : isStandoff ? 'Standoffs' : isChannel ? 'Channels' : 'Spigots';
+                // SD50 has 2 discs per position, show actual disc count
+                const count = isSD50 ? result.totalSpigots * 2 : result.totalSpigots;
+                return <li><span className="font-medium">{label}:</span> {count}</li>;
+              })()}
               {result.panelsSummary && <li className="leading-snug" dangerouslySetInnerHTML={{ __html: result.panelsSummary }} />}
             </ul>
           )}

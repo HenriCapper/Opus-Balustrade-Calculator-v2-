@@ -292,7 +292,8 @@ function buildSp12OrderList({ input, result }: BuildContext): OrderListItem[] {
 function buildSd50OrderList({ input, result }: BuildContext): OrderListItem[] {
   const items: OrderListItem[] = [];
   const finishCode = normaliseFinish(input.finish);
-  const discsQuantity = Math.round((result.totalSpigots ?? 0) * 100) / 100;
+  // SD50 has 2 discs per position, so multiply by 2 for actual disc count
+  const discsQuantity = Math.round((result.totalSpigots ?? 0) * 2 * 100) / 100;
   const selectedHead = input.discHead && SD50_DISC_HEADS.has(input.discHead)
     ? input.discHead
     : 'SD50-SH';
