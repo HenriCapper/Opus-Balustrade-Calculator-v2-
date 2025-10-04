@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type ShapeKey = "inline" | "corner" | "u" | "enclosed" | "custom";
-export type SystemKey = 'channel' | 'spigots' | 'standoffs' | 'posts';
+export type SystemKey = 'channels' | 'spigots' | 'standoffs' | 'posts';
 
 type ShapeState = {
   selected: ShapeKey | null;

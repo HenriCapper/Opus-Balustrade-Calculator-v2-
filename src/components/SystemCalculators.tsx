@@ -32,7 +32,7 @@ export type CalcItem = {
 }
 
 export const calculators: Record<SystemKey, CalcItem[]> = {
-  channel: [
+  channels: [
     { key: 'smart-top', label: 'Smart Lock Top Fix', desc: 'Top-mounted channel system with smart locking mechanism', img: smartTop },
     { key: 'smart-side', label: 'Smart Lock Side Fix', desc: 'Side-mounted channel system with smart locking mechanism', img: smartSide },
     { key: 'lugano', label: 'Lugano Channel', desc: 'Premium channel system for structural glazing applications', img: lugano },

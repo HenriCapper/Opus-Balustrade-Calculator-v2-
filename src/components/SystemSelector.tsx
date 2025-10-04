@@ -6,7 +6,7 @@ import { useSelectionStore } from '@/store/useSelectionStore'
 import { useNavigate } from 'react-router-dom'
 
 type SystemDef = {
-  key: 'channel' | 'spigots' | 'standoffs' | 'posts'
+  key: 'channels' | 'spigots' | 'standoffs' | 'posts'
   label: string
   desc: string
   img: string
@@ -15,7 +15,7 @@ type SystemDef = {
 
 const systems: SystemDef[] = [
   {
-    key: 'channel',
+    key: 'channels',
     label: 'Channel Systems',
     desc: 'Structural glazing with aluminum channels',
     img: channelImg,

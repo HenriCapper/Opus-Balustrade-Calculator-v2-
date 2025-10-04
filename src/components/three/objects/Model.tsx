@@ -16,7 +16,8 @@ type ModelProps = {
 // Dynamic path resolution: looks for /src/assets/<kind>s/models/<code>.glb
 export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: ModelProps){
   const normCode = code.toUpperCase();
-  const path = useMemo(()=> `/models/${kind === 'spigot' ? 'spigots' : kind + 's'}/${normCode}.glb`, [kind, normCode]);
+  const path = useMemo(()=> `/models/${kind}/${normCode}.glb`, [kind, normCode]);
+  console.log('Loading model from path:', path);
   let gltf: any;
   try {
     gltf = useGLTF(path);
@@ -194,6 +195,7 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
     >
       <primitive object={(sceneWithFinish || gltf.scene).clone()} scale={scale} />
     </group>
+    // if sp13 add a vertical plane geometry behind it to simulate wall the width of wall should be the same as side length/ width
   );
 }
 
@@ -204,6 +206,9 @@ useGLTF.preload('/models/spigots/SP14.glb');
 useGLTF.preload('/models/spigots/SP15.glb');
 useGLTF.preload('/models/spigots/RMP160.glb');
 useGLTF.preload('/models/spigots/SMP160.glb');
+
+useGLTF.preload('/models/standoffs/SD50.glb');
+
 
 
 

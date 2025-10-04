@@ -517,7 +517,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
         return (
           <Model
             key={i}
-            kind="spigot"
+            kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
             code={codeUpper}
             position={[s.position.x * scale, y, s.position.z * scale]}
             scale={0.65}
