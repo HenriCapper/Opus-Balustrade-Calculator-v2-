@@ -22,10 +22,26 @@ export const GROUND_Y_OFFSETS_MM: Record<string, number> = {
   SP15: -31,
   RMP160: -41,
   SMP160: -41,
+  SD50: -200
 };
 
 export const MODEL_XZ_OFFSETS_MM: Record<string, { x?: number; z?: number }> = {
-  SD50: { x: -9},
+  SD50: { x: -9 },
+};
+
+export interface WallRenderConfig {
+  /** Offset in millimetres to push the wall backward along the outward normal */
+  offsetMm: number;
+  /** World-space Y position (in millimetres) for the wall mesh centre */
+  centerYMm?: number;
+}
+
+export const MODEL_WALL_CONFIG: Record<string, WallRenderConfig> = {
+  SP13: { offsetMm: 58, centerYMm: -286.5 },
+  SD50: { offsetMm: 75, centerYMm: 0 },
+  SD75: { offsetMm: 45, centerYMm: -286.5 },
+  SD100: { offsetMm: 45, centerYMm: -286.5 },
+  PF150: { offsetMm: 45, centerYMm: -286.5 },
 };
 
 export const mmToMeters = (mm: number) => mm * 0.001;

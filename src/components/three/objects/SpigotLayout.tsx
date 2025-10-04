@@ -7,7 +7,7 @@ import { Model } from "./Model";
 import { Text, useTexture } from "@react-three/drei";
 import { LightGlassMaterial } from "../materials/LightGlassMaterial";
 import { useFrame, useThree } from "@react-three/fiber";
-import { GROUND_Y_OFFSETS_MM, MODEL_XZ_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
+import { GROUND_Y_OFFSETS_MM, MODEL_XZ_OFFSETS_MM, MODEL_WALL_CONFIG, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
 
 // Preload wall texture set to minimize pop-in when switching to SP13
 useTexture.preload('/textures/Wall/BaseColor.png');
@@ -314,6 +314,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   const baseSpigotY = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
   const duplicateSpigotYOffset = mmToMeters(100);
   const shouldDoubleSpigots = codeUpper === "SD50";
+  const wallConfig = MODEL_WALL_CONFIG[codeUpper];
+  const wallCenterY = wallConfig?.centerYMm != null ? mmToMeters(wallConfig.centerYMm) : -0.2865;
 
   // Compute dynamic ground plane size (optional visual aid for custom shapes)
   const bounds = new THREE.Box3();
@@ -329,8 +331,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   return (
     <group {...props}>
-      {codeUpper === 'SP13' && segments && segments.length > 0 && (
-        // For SP13 (wall-fixed), draw a vertical wall plane behind each side with width equal to the side length
+      {wallConfig && segments && segments.length > 0 && (
+        // Draw a vertical backing wall for wall-mounted systems with width equal to each side length
         <group>
           {segments.map((seg: Segment, i: number) => {
             const scale = 0.001;
@@ -343,7 +345,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             );
             const widthM = Math.max(0.001, seg.length * scale);
             const wallThicknessM = 0.1; // ~100mm wall thickness; tweak as needed
-            const wallOffsetM = 0.058; // place slightly behind spigots (~40mm)
+            const wallOffsetM = mmToMeters(wallConfig.offsetMm);
             // Offset the wall backwards so spigots appear in front of it
             const pos = mid.clone().add(normal.clone().multiplyScalar(-wallOffsetM));
 
@@ -373,7 +375,7 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             return (
               <mesh
                 key={`wall-${i}`}
-                position={[pos.x, -0.2865, pos.z]}
+                position={[pos.x, wallCenterY, pos.z]}
                 quaternion={quat}
                 receiveShadow
               >
