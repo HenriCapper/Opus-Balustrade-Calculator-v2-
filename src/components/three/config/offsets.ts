@@ -9,6 +9,7 @@ export const MODEL_Y_OFFSETS_MM: Record<string, number> = {
   SP15: -31,
   RMP160: -41,
   SMP160: -41,
+  SD50: 25,
 };
 
 // Ground/grid plane Y (in millimeters) per model.
@@ -21,6 +22,10 @@ export const GROUND_Y_OFFSETS_MM: Record<string, number> = {
   SP15: -31,
   RMP160: -41,
   SMP160: -41,
+};
+
+export const MODEL_XZ_OFFSETS_MM: Record<string, { x?: number; z?: number }> = {
+  SD50: { x: -9},
 };
 
 export const mmToMeters = (mm: number) => mm * 0.001;

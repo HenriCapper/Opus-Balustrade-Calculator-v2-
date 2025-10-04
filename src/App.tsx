@@ -27,7 +27,7 @@ function useRouteSync() {
     const segments = location.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
     const [sysSeg, calcSeg, shapeSeg] = segments as [string|undefined,string|undefined,string|undefined];
 
-    const validSystems: SystemKey[] = ["channel", "spigots", "standoffs", "posts"]; // posts currently disabled
+  const validSystems: SystemKey[] = ["channels", "spigots", "standoffs", "posts"]; // posts currently disabled
     const nextSystem = sysSeg && validSystems.includes(sysSeg as SystemKey) ? (sysSeg as SystemKey) : null;
     if (sysSeg && !nextSystem) {
       // invalid first segment -> redirect home

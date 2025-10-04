@@ -7,7 +7,7 @@ import { Model } from "./Model";
 import { Text, useTexture } from "@react-three/drei";
 import { LightGlassMaterial } from "../materials/LightGlassMaterial";
 import { useFrame, useThree } from "@react-three/fiber";
-import { GROUND_Y_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
+import { GROUND_Y_OFFSETS_MM, MODEL_XZ_OFFSETS_MM, MODEL_Y_OFFSETS_MM, getModelCodeUpper, mmToMeters } from "../config/offsets";
 
 // Preload wall texture set to minimize pop-in when switching to SP13
 useTexture.preload('/textures/Wall/BaseColor.png');
@@ -309,6 +309,11 @@ export function SpigotLayout(props: ComponentProps<"group">) {
   })();
   const thicknessM = glassThicknessMm * 0.001;
   const { panelMeshes, gateMeshes, spigots, segments } = data;
+  const xOffset = mmToMeters(MODEL_XZ_OFFSETS_MM[codeUpper]?.x ?? 0);
+  const zOffset = mmToMeters(MODEL_XZ_OFFSETS_MM[codeUpper]?.z ?? 0);
+  const baseSpigotY = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
+  const duplicateSpigotYOffset = mmToMeters(100);
+  const shouldDoubleSpigots = codeUpper === "SD50";
 
   // Compute dynamic ground plane size (optional visual aid for custom shapes)
   const bounds = new THREE.Box3();
@@ -511,19 +516,32 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             >{`${p.height} mm glass height`}</FacingText>
           );
         })()}
-      {spigots.map((s: SpigotItem, i: number) => {
+      {spigots.flatMap((s: SpigotItem, i: number) => {
         const scale = 0.001;
-        const y = mmToMeters(MODEL_Y_OFFSETS_MM[codeUpper] ?? 0);
-        return (
+        const x = s.position.x * scale + xOffset;
+        const z = s.position.z * scale + zOffset;
+        const baseModel = (
           <Model
-            key={i}
+            key={`${i}-base`}
             kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
             code={codeUpper}
-            position={[s.position.x * scale, y, s.position.z * scale]}
+            position={[x, baseSpigotY, z]}
             scale={0.65}
             quaternion={s.quat}
           />
         );
+        if (!shouldDoubleSpigots) return [baseModel];
+        const duplicateModel = (
+          <Model
+            key={`${i}-double`}
+            kind={(input?.system as "spigot" | "channel" | "standoff" | "post") ?? "spigot"}
+            code={codeUpper}
+            position={[x, baseSpigotY + duplicateSpigotYOffset, z]}
+            scale={0.65}
+            quaternion={s.quat}
+          />
+        );
+        return [baseModel, duplicateModel];
       })}
     </group>
   );
