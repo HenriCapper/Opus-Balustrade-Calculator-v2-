@@ -241,13 +241,18 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             const latchGapMm = isWallToGlassLatch ? 7.5 : 10;
             
             // Use actual gate leaf width from gate meta or default
-            const leafWidthMm = Math.max(
-              350,
-              Math.min(1000, gate.leafWidth ?? defaultGateLeaf ?? 890)
-            );
+            // Clamp to valid range 350-1000mm
+            const rawLeafWidth = gate.leafWidth ?? defaultGateLeaf ?? 890;
+            const leafWidthMm = Math.max(350, Math.min(1000, rawLeafWidth));
             
             // Calculate actual gate total width with current leaf size
             const actualGateTotalWidth = leafWidthMm + hingeGapMm + latchGapMm;
+            
+            // Validate that gate fits in available space
+            const availableSpace = seg.length - gap * 2; // rough estimate
+            if (actualGateTotalWidth > availableSpace) {
+              console.warn(`Gate ${actualGateTotalWidth}mm exceeds available space ${availableSpace}mm on segment ${i}`);
+            }
             
             const leafStart = gateStart + hingeGapMm;
             const midLocal = seg.dir.clone().multiplyScalar(leafStart + leafWidthMm / 2);

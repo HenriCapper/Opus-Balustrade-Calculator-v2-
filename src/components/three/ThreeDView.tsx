@@ -97,10 +97,9 @@ export default function ThreeDView() {
       const latchGapMm = isWallToGlassLatch ? 7.5 : 10;
       
       // Use actual gate leaf width from gate meta or default
-      const leafWidthMm = Math.max(
-        350,
-        Math.min(1000, (gate as any).leafWidth ?? 890)
-      );
+      // Clamp to valid range 350-1000mm
+      const rawLeafWidth = (gate as any).leafWidth ?? 890;
+      const leafWidthMm = Math.max(350, Math.min(1000, rawLeafWidth));
       
       return leafWidthMm + hingeGapMm + latchGapMm;
     };

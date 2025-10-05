@@ -66,6 +66,12 @@ export default function SideVisuals() {
     const current = gates[sideIndex];
     if (!current || !current.enabled) return;
     
+    // Stock sizes mode: lock gate width to 800mm
+    const glassMode = input.glassMode || 'standard';
+    if (glassMode === 'stock') {
+      value = 800;
+    }
+    
     const leaf = Math.max(350, Math.min(1000, value));
     const oldLeaf = (current as GateMeta).leafWidth || globalGateLeafWidth || 890;
     const diff = leaf - oldLeaf;
@@ -523,10 +529,14 @@ export default function SideVisuals() {
                       min={350}
                       max={1000}
                       step={5}
-                      defaultValue={gate.leafWidth ?? globalGateLeafWidth ?? 890}
+                      value={input?.glassMode === 'stock' ? 800 : (gate.leafWidth ?? globalGateLeafWidth ?? 890)}
                       onChange={(e)=> setGateLeafWidth(i, parseFloat(e.target.value))}
-                      className="h-8 w-24 rounded-md border border-slate-300 px-2 text-[12px] focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
+                      disabled={input?.glassMode === 'stock'}
+                      className={`h-8 w-24 rounded-md border px-2 text-[12px] focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 ${input?.glassMode === 'stock' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'border-slate-300'}`}
                     />
+                    {input?.glassMode === 'stock' && (
+                      <span className="text-[10px] text-slate-500">Locked</span>
+                    )}
                   </div>
                 </div>
               </div>
