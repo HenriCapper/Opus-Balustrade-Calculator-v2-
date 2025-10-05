@@ -15,6 +15,8 @@ import CompliantLayout from "@/components/CompliantLayout";
 import SideVisuals from "@/components/SideVisuals";
 import OrderList from "@/components/OrderList";
 import { computeOrderList } from "@/data/orderLists";
+import HeadSelector from "@/components/ui/HeadSelector";
+import { getHeadOptions, hasHeadSelection } from "@/data/headOptions";
 export default function LayoutForm() {
   const clear = useSelectionStore((s) => s.clearSelected);
   const shape = useSelectionStore((s) => s.selected);
@@ -106,24 +108,9 @@ export default function LayoutForm() {
     return list;
   }, [optionSets, fenceCategory, glassThickness]);
 
-  const discHeadOptions = useMemo(() => {
-    if (calcKey === 'sd50') {
-      return [
-        { value: 'SD50-SH', label: 'Screw Head' },
-        { value: 'SD50-FH', label: 'Flat Head' },
-        { value: 'SD50-BH', label: 'Bevelled Head' },
-        { value: 'ASD50-SH', label: 'Adjustable Screw Head' },
-      ];
-    }
-    if (calcKey === 'pf150') {
-      return [
-        { value: 'PF150', label: 'Standard Clamp' },
-        { value: 'PF150R', label: 'Concealed Clamp' },
-        { value: 'PF150S', label: 'Square Clamp' },
-      ];
-    }
-    return [] as { value: string; label: string }[];
-  }, [calcKey]);
+  // Get head options from centralized data
+  const headOptions = useMemo(() => getHeadOptions(calcKey), [calcKey]);
+  const showHeadSelection = useMemo(() => hasHeadSelection(calcKey), [calcKey]);
 
   const showExtraPackers = useMemo(() => {
     return calcKey ? ['sd50', 'sd100', 'pf150'].includes(calcKey) : false;
@@ -181,14 +168,14 @@ export default function LayoutForm() {
   }, [filteredHandrails, fenceCategory, handrail]);
 
   useEffect(() => {
-    if (!discHeadOptions.length) {
+    if (!headOptions.length) {
       setDiscHead(undefined);
       return;
     }
-    if (!discHeadOptions.some((opt) => opt.value === discHead)) {
-      setDiscHead(discHeadOptions[0]?.value);
+    if (!headOptions.some((opt) => opt.value === discHead)) {
+      setDiscHead(headOptions[0]?.value);
     }
-  }, [discHeadOptions, discHead]);
+  }, [headOptions, discHead]);
 
   useEffect(() => {
     if (!showExtraPackers) {
@@ -538,7 +525,7 @@ export default function LayoutForm() {
     } else {
       notes.push('No PS1 row found for selected parameters (placeholder calculation).');
     }
-    const resolvedDiscHead = discHeadOptions.length ? (discHead || discHeadOptions[0]?.value) : undefined;
+    const resolvedDiscHead = headOptions.length ? (discHead || headOptions[0]?.value) : undefined;
     const resolvedPowdercoatColor = showPowdercoatColor ? powdercoatColor.trim() : '';
     const resolvedExtraPackers = showExtraPackers ? parsedExtraPackers : 0;
     const layoutInput: LayoutCalculationInput = {
@@ -758,18 +745,13 @@ export default function LayoutForm() {
           </select>
         </FieldGroup>
 
-        {discHeadOptions.length > 0 && (
+        {showHeadSelection && (
           <FieldGroup>
-            <label className="text-xs font-medium text-slate-500">Disc / clamp head</label>
-            <select
-              value={discHead || discHeadOptions[0]?.value}
-              onChange={(e) => setDiscHead(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
-            >
-              {discHeadOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <HeadSelector
+              options={headOptions}
+              value={discHead || headOptions[0]?.value}
+              onChange={setDiscHead}
+            />
           </FieldGroup>
         )}
 
