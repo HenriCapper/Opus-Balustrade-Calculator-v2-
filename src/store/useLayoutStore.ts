@@ -52,10 +52,12 @@ export interface LayoutCalculationResult {
   totalSpigots?: number; // precise total spigots
   // New detailed per-side panel data for 3D view
   sidePanelLayouts?: {
-    panelWidths: number[]; // ordered across the side
+    panelWidths: number[]; // ordered across the side (may be adjusted for gates)
     gap: number;           // uniform gap between panels & ends (legacy symmetric solver)
     adjustedLength: number; // side length used during solving (may equal original)
   }[];
+  // Original panel widths before gate adjustments (for restoration when gate moves)
+  originalPanelWidths?: number[][]; // per-side original panel widths
   // Flattened list of all panel widths (ordered by sides) for convenience
   allPanels?: number[];
   // Gate drawing meta per side (for elevation visuals)

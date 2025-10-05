@@ -27,12 +27,15 @@ export default function SideVisuals() {
   function updateGate(sideIndex: number, next: { panelIndex?: number; hingeOnLeft?: boolean }) {
     if (!input || !result) return;
     const layouts = result.sidePanelLayouts || [];
-    const gates = (result.sideGatesRender || []).slice();
+    const gates = (result.sideGatesRender || []).slice() as GateMeta[];
     const layout = layouts[sideIndex];
     if (!layout) return;
     const totalPanels = layout.panelWidths.length;
     const current = gates[sideIndex] || { enabled: false, panelIndex: 0, hingeOnLeft: false };
     if (!current.enabled) return;
+
+    const oldPanelIndex = current.panelIndex;
+    const oldHingeOnLeft = current.hingeOnLeft;
 
     // Clamp panelIndex to valid range [0, totalPanels-1]
     let pIndex = current.panelIndex;
@@ -41,21 +44,137 @@ export default function SideVisuals() {
     }
     const hingeOnLeft = typeof next.hingeOnLeft === 'boolean' ? next.hingeOnLeft : current.hingeOnLeft;
 
-    // Recompute gate start mm (matches solver formula in LayoutForm)
-    const sumBefore = layout.panelWidths.slice(0, pIndex).reduce((acc, val) => acc + val, 0);
-    const gateStartMm = layout.gap + sumBefore + layout.gap * pIndex;
+    // Check if gate position or hinge side changed
+    const gatePositionChanged = pIndex !== oldPanelIndex || hingeOnLeft !== oldHingeOnLeft;
+    
+    if (gatePositionChanged) {
+      // Get original panel widths (unadjusted)
+      const originalWidths = result.originalPanelWidths?.[sideIndex] || layout.panelWidths;
+      const newPanelWidths = [...originalWidths];
+      
+      // Get current gate width
+      const currentGateWidth = (current as GateMeta).leafWidth || globalGateLeafWidth || 890;
+      const defaultGateWidth = 890;
+      const gateDiff = currentGateWidth - defaultGateWidth;
+      
+      // Only adjust if gate width is different from default
+      if (gateDiff !== 0) {
+        // Identify NEW hinge and latch panel indices
+        let newHingePanelIndex: number | null = null;
+        let newLatchPanelIndex: number | null = null;
+        
+        const gateHasRightPanel = pIndex < totalPanels;
+        const gateHasLeftPanel = pIndex > 0;
+        
+        if (hingeOnLeft) {
+          newHingePanelIndex = gateHasLeftPanel ? pIndex - 1 : null;
+          newLatchPanelIndex = gateHasRightPanel ? pIndex : null;
+        } else {
+          newHingePanelIndex = gateHasRightPanel ? pIndex : null;
+          newLatchPanelIndex = gateHasLeftPanel ? pIndex - 1 : null;
+        }
+        
+        // Adjust new hinge/latch panels
+        const panelsToAdjust: number[] = [];
+        if (newHingePanelIndex !== null && newHingePanelIndex < newPanelWidths.length) {
+          panelsToAdjust.push(newHingePanelIndex);
+        }
+        if (newLatchPanelIndex !== null && newLatchPanelIndex < newPanelWidths.length) {
+          panelsToAdjust.push(newLatchPanelIndex);
+        }
+        
+        if (panelsToAdjust.length > 0) {
+          const adjustmentPerPanel = -gateDiff / panelsToAdjust.length;
+          for (const idx of panelsToAdjust) {
+            const newWidth = newPanelWidths[idx] + adjustmentPerPanel;
+            if (newWidth >= 200) {
+              newPanelWidths[idx] = newWidth;
+            }
+          }
+        }
+      }
+      
+      // Update layout with adjusted panel widths
+      const newSidePanelLayouts = [...result.sidePanelLayouts!];
+      newSidePanelLayouts[sideIndex] = {
+        ...layout,
+        panelWidths: newPanelWidths,
+      };
+      
+      // Recalculate gate start mm
+      const sumBefore = newPanelWidths.slice(0, pIndex).reduce((acc, val) => acc + val, 0);
+      const gateStartMm = layout.gap + sumBefore + layout.gap * pIndex;
+      
+      gates[sideIndex] = {
+        ...current,
+        panelIndex: pIndex,
+        hingeOnLeft,
+        enabled: true,
+        gateStartMm,
+      } as GateMeta;
+      
+      // Recalculate all panels and totals
+      const allPanels: number[] = [];
+      newSidePanelLayouts.forEach(sideLayout => {
+        if (sideLayout.panelWidths && sideLayout.panelWidths.length) {
+          allPanels.push(...sideLayout.panelWidths);
+        }
+      });
+      
+      // Count gates
+      const gateCount = gates.filter(g => g?.enabled).length;
+      
+      // Recalculate summary
+      let panelsSummary: string | undefined;
+      let totalSpigots: number | undefined;
+      let estimatedPanels: number | undefined;
+      
+      if (allPanels.length && result.ps1) {
+        const glassThickness = input.glassThickness || '12';
+        const fenceType = input.fenceType || '';
+        const fenceCategory = fenceType.toLowerCase().includes('pool') ? 'pool' : 'balustrade';
+        
+        const ps1ForAggregate = {
+          internal: result.ps1.internal,
+          edge: result.ps1.edge,
+          system: fenceCategory,
+          thk: parseFloat(glassThickness) || 12,
+          hmin: 0,
+          hmax: 0,
+          zone: input.windZone || '',
+        };
+        const agg = aggregatePanels(allPanels, ps1ForAggregate);
+        panelsSummary = agg.panelsSummary;
+        totalSpigots = agg.totalSpigots + gateCount * 2;
+        estimatedPanels = agg.totalPanels;
+      }
+      
+      setLayout({ ...input }, {
+        ...result,
+        sideGatesRender: gates,
+        sidePanelLayouts: newSidePanelLayouts,
+        originalPanelWidths: result.originalPanelWidths, // Preserve original widths
+        allPanels,
+        panelsSummary,
+        totalSpigots,
+        estimatedPanels,
+        estimatedSpigots: totalSpigots,
+      });
+    } else {
+      // Just update gate metadata without changing panels
+      const sumBefore = layout.panelWidths.slice(0, pIndex).reduce((acc, val) => acc + val, 0);
+      const gateStartMm = layout.gap + sumBefore + layout.gap * pIndex;
 
-    // Recompute gate start in mm from the chosen boundary (leading gap + preceding panels/gaps)
-    // Persist the new hinge + position; 3D view can infer gate start from panelIndex
-    gates[sideIndex] = {
-      ...current,
-      panelIndex: pIndex,
-      hingeOnLeft,
-      enabled: true,
-      gateStartMm,
-    };
+      gates[sideIndex] = {
+        ...current,
+        panelIndex: pIndex,
+        hingeOnLeft,
+        enabled: true,
+        gateStartMm,
+      };
 
-    setLayout({ ...input }, { ...result, sideGatesRender: gates });
+      setLayout({ ...input }, { ...result, sideGatesRender: gates });
+    }
   }
   // Adjust per-side gate leaf width and adjust hinge/latch panels only
   type StoreGate = NonNullable<LayoutCalculationResult['sideGatesRender']>[number];
@@ -187,6 +306,7 @@ export default function SideVisuals() {
           ...result,
           sideGatesRender: gates,
           sidePanelLayouts: newSidePanelLayouts,
+          originalPanelWidths: result.originalPanelWidths, // Preserve original widths
           allPanels,
           panelsSummary,
           totalSpigots,

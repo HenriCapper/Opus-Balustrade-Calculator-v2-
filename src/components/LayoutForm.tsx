@@ -560,6 +560,7 @@ export default function LayoutForm() {
       panelsSummary,
       totalSpigots,
       sidePanelLayouts,
+      originalPanelWidths: sidePanelLayouts.map(layout => [...layout.panelWidths]), // Store original widths
       allPanels,
       notes,
       sideGatesRender,
