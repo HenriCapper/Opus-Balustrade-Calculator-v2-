@@ -60,7 +60,7 @@ export default function SideVisuals() {
   // Adjust per-side gate leaf width and adjust hinge/latch panels only
   type StoreGate = NonNullable<LayoutCalculationResult['sideGatesRender']>[number];
   type GateMeta = StoreGate & { leafWidth?: number };
-  function setGateLeafWidth(sideIndex: number, value: number) {
+  function setGateLeafWidth(sideIndex: number, value: number, skipValidation = false) {
     if (!input || !result) return;
     const gates = (result.sideGatesRender || []).slice() as GateMeta[];
     const current = gates[sideIndex];
@@ -72,7 +72,8 @@ export default function SideVisuals() {
       value = 800;
     }
     
-    const leaf = Math.max(350, Math.min(1000, value));
+    // Only clamp when validation is needed (on blur or finalization)
+    const leaf = skipValidation ? value : Math.max(350, Math.min(1000, value));
     const oldLeaf = (current as GateMeta).leafWidth || globalGateLeafWidth || 890;
     const diff = leaf - oldLeaf;
     
@@ -534,8 +535,21 @@ export default function SideVisuals() {
                       min={350}
                       max={1000}
                       step={5}
-                      value={input?.glassMode === 'stock' ? 800 : (gate.leafWidth ?? globalGateLeafWidth ?? 890)}
-                      onChange={(e)=> setGateLeafWidth(i, parseFloat(e.target.value))}
+                      defaultValue={input?.glassMode === 'stock' ? 800 : (gate.leafWidth ?? globalGateLeafWidth ?? 890)}
+                      onBlur={(e)=> {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val)) {
+                          // Clamp to valid range on blur
+                          const clamped = Math.max(350, Math.min(1000, val));
+                          e.target.value = String(clamped);
+                          setGateLeafWidth(i, clamped);
+                        }
+                      }}
+                      onKeyDown={(e)=> {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur(); // Trigger validation
+                        }
+                      }}
                       disabled={input?.glassMode === 'stock'}
                       className={`h-8 w-24 rounded-md border px-2 text-[12px] focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40 ${input?.glassMode === 'stock' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'border-slate-300'}`}
                     />
