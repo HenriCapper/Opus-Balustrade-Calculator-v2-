@@ -432,7 +432,7 @@ export default function ThreeDView() {
     const hardwareUnit = isPost 
       ? 'post' 
       : isStandoff 
-        ? 'standoff' 
+        ? 'disc'
         : isChannel 
           ? 'channel' 
           : 'spigot';
@@ -494,7 +494,7 @@ export default function ThreeDView() {
                 const isStandoff = input?.system === 'standoffs';
                 const isChannel = input?.system === 'channels';
                 const isSD50 = input?.calcKey === 'sd50';
-                const label = isPost ? 'Posts' : isStandoff ? 'Standoffs' : isChannel ? 'Channels' : 'Spigots';
+                const label = isPost ? 'Posts' : isStandoff ?'Discs' : isChannel ? 'Channels' : 'Spigots';
                 // SD50 has 2 discs per position, show actual disc count
                 const count = isSD50 ? result.totalSpigots * 2 : result.totalSpigots;
                 return <li><span className="font-medium">{label}:</span> {count}</li>;

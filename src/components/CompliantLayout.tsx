@@ -18,7 +18,7 @@ export default function CompliantLayout(){
   const hardwareLabel = isPostSystem 
     ? 'Posts' 
     : isStandoffSystem 
-      ? 'Standoffs' 
+      ? 'Discs' 
       : isChannelSystem 
         ? 'Channels' 
         : 'Spigots';
@@ -56,7 +56,7 @@ export default function CompliantLayout(){
     const hardwareUnit = isPostSystem 
       ? 'post' 
       : isStandoffSystem 
-        ? 'standoff' 
+        ? 'disc'
         : isChannelSystem 
           ? 'channel' 
           : 'spigot';
