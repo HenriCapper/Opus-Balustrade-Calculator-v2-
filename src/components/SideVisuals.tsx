@@ -140,6 +140,11 @@ export default function SideVisuals() {
           panelWidths: newPanelWidths,
         };
         
+        // Recalculate gate start position based on NEW panel widths
+        const sumBefore = newPanelWidths.slice(0, gateIndexRaw).reduce((acc, val) => acc + val, 0);
+        const newGateStartMm = layout.gap + sumBefore + layout.gap * gateIndexRaw;
+        gates[sideIndex] = { ...gates[sideIndex], leafWidth: leaf, gateStartMm: newGateStartMm } as GateMeta;
+        
         // Recalculate all panels and totals
         const allPanels: number[] = [];
         newSidePanelLayouts.forEach(sideLayout => {
