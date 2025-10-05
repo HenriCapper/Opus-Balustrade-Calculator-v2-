@@ -208,6 +208,7 @@ useGLTF.preload('/models/spigots/RMP160.glb');
 useGLTF.preload('/models/spigots/SMP160.glb');
 
 useGLTF.preload('/models/standoffs/SD50.glb');
+useGLTF.preload('/models/standoffs/PRADIS.glb');
 
 
 
