@@ -33,6 +33,45 @@ export default function CompliantLayout(){
     totalHardware = totalHardware * 2;
   }
   
+  // Regenerate panel summary with proper hardware terminology for non-spigot systems
+  if ((isStandoffSystem || isChannelSystem || isPostSystem) && result.allPanels && result.allPanels.length && result.ps1) {
+    const groups: Record<string,{count:number;width:number;hardwareCount:number;}> = {};
+    result.allPanels.forEach(w => {
+      const key = w.toFixed(2);
+      if(!groups[key]) {
+        // Calculate hardware count per panel based on system type
+        let hardwareCount: number;
+        if (isPostSystem) {
+          hardwareCount = w <= 600 ? 1 : 2;
+        } else {
+          // For standoffs/channels, calculate based on PS1 data
+          const ps1 = result.ps1!;
+          hardwareCount = Math.max(2, Math.ceil((w - 2 * ps1.edge) / ps1.internal) + 1);
+        }
+        groups[key] = { count: 0, width: w, hardwareCount };
+      }
+      groups[key].count++;
+    });
+    
+    const hardwareUnit = isPostSystem 
+      ? 'post' 
+      : isStandoffSystem 
+        ? 'standoff' 
+        : isChannelSystem 
+          ? 'channel' 
+          : 'spigot';
+    
+    panelsSummary = Object.values(groups)
+      .sort((a,b)=> b.width - a.width)
+      .map(g => {
+        // For SD50, show disc count (2× positions)
+        const displayCount = isSD50 ? g.hardwareCount * 2 : g.hardwareCount;
+        const displayPlural = displayCount > 1 ? 's' : '';
+        return `${g.count} × @${g.width.toFixed(2)} mm (${displayCount} ${hardwareUnit}${displayPlural} each)`;
+      })
+      .join('<br>');
+  }
+  
   if (isPostSystem && result.allPanels && result.allPanels.length) {
     // Post system calculation: 1 post for ≤600mm panels, 2 posts for >600mm panels
     const groups: Record<string,{count:number;width:number;}> = {};

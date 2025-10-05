@@ -397,6 +397,50 @@ export default function ThreeDView() {
     setLayout({ ...input, finish: next }, { ...result });
   }
 
+  // Helper function to regenerate panel summary with correct hardware terminology
+  function regeneratePanelSummary(
+    allPanels: number[], 
+    ps1: { internal: number; edge: number },
+    systemType: string,
+    calcKey?: string
+  ): string {
+    const isPost = systemType === 'posts';
+    const isStandoff = systemType === 'standoffs';
+    const isChannel = systemType === 'channels';
+    const isSD50 = calcKey === 'sd50';
+    
+    const hardwareUnit = isPost 
+      ? 'post' 
+      : isStandoff 
+        ? 'standoff' 
+        : isChannel 
+          ? 'channel' 
+          : 'spigot';
+    
+    const groups: Record<string,{count:number;width:number;}> = {};
+    allPanels.forEach(w => {
+      const k = w.toFixed(2);
+      if(!groups[k]) groups[k] = {count:0, width:w};
+      groups[k].count++;
+    });
+    
+    return Object.values(groups)
+      .sort((a,b)=>b.width - a.width)
+      .map(g => {
+        let hardwareCount: number;
+        if (isPost) {
+          hardwareCount = g.width <= 600 ? 1 : 2;
+        } else {
+          hardwareCount = Math.max(2, Math.ceil((g.width - 2*ps1.edge)/ps1.internal)+1);
+        }
+        // For SD50, show disc count (2× positions)
+        const displayCount = isSD50 ? hardwareCount * 2 : hardwareCount;
+        const plural = displayCount > 1 ? 's' : '';
+        return `${g.count} × @${g.width.toFixed(2)} mm (${displayCount} ${hardwareUnit}${plural} each)`;
+      })
+      .join('<br>');
+  }
+
   return (
     <div className="flex h-dvh flex-col">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
@@ -435,7 +479,22 @@ export default function ThreeDView() {
                 const count = isSD50 ? result.totalSpigots * 2 : result.totalSpigots;
                 return <li><span className="font-medium">{label}:</span> {count}</li>;
               })()}
-              {result.panelsSummary && <li className="leading-snug" dangerouslySetInnerHTML={{ __html: result.panelsSummary }} />}
+              {(() => {
+                // Regenerate panel summary for non-spigot systems to show correct terminology
+                const needsRegeneration = input?.system !== 'spigots' && result.allPanels && result.ps1;
+                if (needsRegeneration && result.allPanels && result.ps1) {
+                  const summary = regeneratePanelSummary(
+                    result.allPanels, 
+                    { internal: result.ps1.internal, edge: result.ps1.edge },
+                    input!.system!,
+                    input?.calcKey || undefined
+                  );
+                  return <li className="leading-snug" dangerouslySetInnerHTML={{ __html: summary }} />;
+                } else if (result.panelsSummary) {
+                  return <li className="leading-snug" dangerouslySetInnerHTML={{ __html: result.panelsSummary }} />;
+                }
+                return null;
+              })()}
             </ul>
           )}
           {input && input.system==='spigots' && (
