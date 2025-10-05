@@ -83,12 +83,33 @@ export default function ThreeDView() {
     // Panel step consistent with LayoutForm (10mm standard, 25mm stock)
     const panelStep = input.glassMode === 'standard' ? 10 : 25;
     const allowMixed = input.glassMode === 'stock' && input.allowMixedSizes;
-    const GATE_TOTAL_WIDTH = 905;
     const gateCount = gatesMeta.filter(g => g?.enabled).length;
+    
+    // Function to calculate actual gate total width based on gate meta
+    const getGateTotalWidth = (sideIndex: number): number => {
+      const gate = gatesMeta[sideIndex];
+      if (!gate?.enabled) return 0;
+      
+      const hingeOnLeft = !!gate.hingeOnLeft;
+      const isWallToGlassHinge = hingeOnLeft && gate.panelIndex === 0;
+      const hingeGapMm = isWallToGlassHinge ? 7 : 5;
+      const isWallToGlassLatch = !hingeOnLeft && gate.panelIndex === 0;
+      const latchGapMm = isWallToGlassLatch ? 7.5 : 10;
+      
+      // Use actual gate leaf width from gate meta or default
+      const leafWidthMm = Math.max(
+        350,
+        Math.min(1000, (gate as any).leafWidth ?? 890)
+      );
+      
+      return leafWidthMm + hingeGapMm + latchGapMm;
+    };
+    
     const effectiveLengthForSide = (len: number, sideIndex: number) => {
       const gate = gatesMeta[sideIndex];
       if (gate?.enabled) {
-        return Math.max(0, len - GATE_TOTAL_WIDTH);
+        const gateTotalWidth = getGateTotalWidth(sideIndex);
+        return Math.max(0, len - gateTotalWidth);
       }
       return len;
     };

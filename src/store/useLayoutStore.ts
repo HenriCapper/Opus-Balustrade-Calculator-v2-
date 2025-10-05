@@ -24,6 +24,8 @@ export interface LayoutCalculationInput {
   discHead?: string | null;
   extraPackers?: number | null;
   powdercoatColor?: string | null;
+  // Gate configuration per side (for tracking enabled states)
+  sideGates?: { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean }[];
 }
 
 export interface Ps1ResultRow {

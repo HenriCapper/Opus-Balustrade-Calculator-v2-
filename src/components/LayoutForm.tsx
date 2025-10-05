@@ -342,6 +342,32 @@ export default function LayoutForm() {
     }
   }, [optionSets]);
 
+  // Keep custom gate map in sync when designer supplies gate values on runs
+  useEffect(() => {
+    if (!customRuns || !customRuns.length) {
+      setCustomGateByRun({});
+      return;
+    }
+    // Designer is source of truth: if a run has no gate, disable it (don't preserve old state)
+    setCustomGateByRun(() => {
+      const next: Record<string, { enabled: boolean; position: 'left'|'middle'|'right'; hingeOnLeft?: boolean; t?: number }> = {};
+      for (const r of customRuns) {
+        const g = r.gate;
+        if (g && g.enabled) {
+          next[r.id] = {
+            enabled: true,
+            position: g.position || 'middle',
+            hingeOnLeft: !!g.hingeOnLeft,
+            t: typeof g.t === 'number' ? g.t : undefined,
+          };
+        } else {
+          next[r.id] = { enabled: false, position: 'middle' };
+        }
+      }
+      return next;
+    });
+  }, [customRuns]);
+
   function handleSideChange(index: number, value: string) {
     const v = value === '' ? 0 : parseFloat(value);
     setSideLengths(prev => {
@@ -420,13 +446,14 @@ export default function LayoutForm() {
       // Convert spigotsPerPanel to numeric constraint for solver
       const maxSpigotsPerPanel = spigotsPerPanel === 'auto' ? undefined : parseInt(spigotsPerPanel, 10);
       
+      // Gate handling – fixed legacy total width (890 leaf + 5 hinge + 10 latch)
+      const GATE_TOTAL_WIDTH = 905;
+      
   sidePanelLayouts = baseSideArray.map((len, idx) => {
         // Legacy behaviour: standard mode uses symmetric only with continuous-ish step (10mm), stock can allow mixed
         const panelStep = glassMode === 'standard' ? 10 : 25;
         const allowMixed = glassMode === 'stock' && allowMixedSizes;
 
-  // Gate handling – fixed legacy total width (890 leaf + 5 hinge + 10 latch)
-  const GATE_TOTAL_WIDTH = 905;
         let effectiveLen = len;
         let hasGate = false;
         if (shape === 'custom') {
@@ -534,6 +561,7 @@ export default function LayoutForm() {
       discHead: resolvedDiscHead ?? null,
       extraPackers: resolvedExtraPackers,
       powdercoatColor: resolvedPowdercoatColor ? resolvedPowdercoatColor : null,
+      sideGates: sideGates.slice(0, sidesCount),
     };
 
     const layoutResultData: LayoutCalculationResult = {

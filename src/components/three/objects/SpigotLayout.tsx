@@ -209,7 +209,6 @@ export function SpigotLayout(props: ComponentProps<"group">) {
 
   const layouts = result.sidePanelLayouts;
   const gates = (result.sideGatesRender || []) as GateRenderMeta[];
-  const GATE_TOTAL_WIDTH = 905; // keep fixed in 3D; visuals controller only adjusts displayed width
   const defaultGateLeaf = result.gateLeafWidth ?? input?.gateLeafWidth ?? 890;
     const panelMeshes: PanelMesh[] = [];
     const gateMeshes: GateMesh[] = [];
@@ -238,11 +237,18 @@ export function SpigotLayout(props: ComponentProps<"group">) {
             const hingeOnLeft = !!gate.hingeOnLeft;
             const isWallToGlassHinge = hingeOnLeft && gate.panelIndex === 0;
             const hingeGapMm = isWallToGlassHinge ? 7 : 5;
-            const maxLeafWidth = Math.max(200, GATE_TOTAL_WIDTH - hingeGapMm);
+            const isWallToGlassLatch = !hingeOnLeft && gate.panelIndex === 0;
+            const latchGapMm = isWallToGlassLatch ? 7.5 : 10;
+            
+            // Use actual gate leaf width from gate meta or default
             const leafWidthMm = Math.max(
               350,
-              Math.min(maxLeafWidth - 5, gate.leafWidth ?? defaultGateLeaf ?? 890)
+              Math.min(1000, gate.leafWidth ?? defaultGateLeaf ?? 890)
             );
+            
+            // Calculate actual gate total width with current leaf size
+            const actualGateTotalWidth = leafWidthMm + hingeGapMm + latchGapMm;
+            
             const leafStart = gateStart + hingeGapMm;
             const midLocal = seg.dir.clone().multiplyScalar(leafStart + leafWidthMm / 2);
             const mid = seg.start.clone().add(midLocal);
@@ -254,7 +260,8 @@ export function SpigotLayout(props: ComponentProps<"group">) {
               seg,
               hingeOnLeft,
             });
-            cursor = gateStart + GATE_TOTAL_WIDTH;
+            // Use actual gate width to advance cursor
+            cursor = gateStart + actualGateTotalWidth;
             gateInserted = true;
           }
           const startOff = cursor;

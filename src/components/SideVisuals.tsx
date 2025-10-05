@@ -1,6 +1,7 @@
 import { useLayoutStore } from "@/store/useLayoutStore";
 import type { LayoutCalculationResult } from "@/store/useLayoutStore";
 import React from "react";
+import { aggregatePanels } from "@/data/panelSolver";
 
 /**
  * SideVisuals
@@ -17,6 +18,7 @@ export default function SideVisuals() {
   const layouts = result.sidePanelLayouts || [];
   const runs = result.sideRuns || [];
   const gatesMeta = result.sideGatesRender || [];
+  const globalGateLeafWidth = result.gateLeafWidth || 890;
   if (!layouts.length || !runs.length) return null;
 
   const sideLabels = ["A", "B", "C", "D"];
@@ -55,7 +57,7 @@ export default function SideVisuals() {
 
     setLayout({ ...input }, { ...result, sideGatesRender: gates });
   }
-  // Adjust per-side gate leaf width only in visuals controller
+  // Adjust per-side gate leaf width and adjust hinge/latch panels only
   type StoreGate = NonNullable<LayoutCalculationResult['sideGatesRender']>[number];
   type GateMeta = StoreGate & { leafWidth?: number };
   function setGateLeafWidth(sideIndex: number, value: number) {
@@ -63,10 +65,131 @@ export default function SideVisuals() {
     const gates = (result.sideGatesRender || []).slice() as GateMeta[];
     const current = gates[sideIndex];
     if (!current || !current.enabled) return;
+    
     const leaf = Math.max(350, Math.min(1000, value));
-    // Store width on the gate meta using a local extended type
+    const oldLeaf = (current as GateMeta).leafWidth || globalGateLeafWidth || 890;
+    const diff = leaf - oldLeaf;
+    
+    // Store new width on the gate meta
     gates[sideIndex] = { ...current, leafWidth: leaf } as GateMeta;
-    setLayout({ ...input }, { ...result, sideGatesRender: gates });
+    
+    // If gate width changed, adjust the hinge and latch panels
+    if (diff !== 0 && result.sidePanelLayouts) {
+      const layout = result.sidePanelLayouts[sideIndex];
+      if (!layout || !layout.panelWidths || layout.panelWidths.length === 0) {
+        setLayout({ ...input }, { ...result, sideGatesRender: gates });
+        return;
+      }
+      
+      // Determine which panels are hinge and latch
+      const totalPanels = layout.panelWidths.length;
+      const gateIndexRaw = Math.max(0, Math.min(totalPanels, current.panelIndex));
+      
+      // Identify hinge and latch panel indices
+      let hingePanelIndex: number | null = null;
+      let latchPanelIndex: number | null = null;
+      
+      const gateHasRightPanel = gateIndexRaw < totalPanels;
+      const gateHasLeftPanel = gateIndexRaw > 0;
+      
+      if (current.hingeOnLeft) {
+        hingePanelIndex = gateHasLeftPanel ? gateIndexRaw - 1 : null;
+        latchPanelIndex = gateHasRightPanel ? gateIndexRaw : null;
+      } else {
+        hingePanelIndex = gateHasRightPanel ? gateIndexRaw : null;
+        latchPanelIndex = gateHasLeftPanel ? gateIndexRaw - 1 : null;
+      }
+      
+      // Adjust panels: distribute the difference between hinge and latch panels
+      const newPanelWidths = [...layout.panelWidths];
+      let adjustedCount = 0;
+      const panelsToAdjust: number[] = [];
+      
+      if (hingePanelIndex !== null && hingePanelIndex < newPanelWidths.length) {
+        panelsToAdjust.push(hingePanelIndex);
+        adjustedCount++;
+      }
+      if (latchPanelIndex !== null && latchPanelIndex < newPanelWidths.length) {
+        panelsToAdjust.push(latchPanelIndex);
+        adjustedCount++;
+      }
+      
+      if (adjustedCount > 0) {
+        // Distribute the gate width change across hinge and latch panels
+        // Negative diff means gate got smaller, so panels get bigger
+        const adjustmentPerPanel = -diff / adjustedCount;
+        
+        for (const idx of panelsToAdjust) {
+          const newWidth = newPanelWidths[idx] + adjustmentPerPanel;
+          // Ensure panel stays within reasonable bounds (minimum 200mm)
+          if (newWidth >= 200) {
+            newPanelWidths[idx] = newWidth;
+          }
+        }
+        
+        // Update the layout for this side
+        const newSidePanelLayouts = [...result.sidePanelLayouts];
+        newSidePanelLayouts[sideIndex] = {
+          ...layout,
+          panelWidths: newPanelWidths,
+        };
+        
+        // Recalculate all panels and totals
+        const allPanels: number[] = [];
+        newSidePanelLayouts.forEach(sideLayout => {
+          if (sideLayout.panelWidths && sideLayout.panelWidths.length) {
+            allPanels.push(...sideLayout.panelWidths);
+          }
+        });
+        
+        // Count gates
+        const gateCount = gates.filter(g => g?.enabled).length;
+        
+        // Recalculate summary
+        let panelsSummary: string | undefined;
+        let totalSpigots: number | undefined;
+        let estimatedPanels: number | undefined;
+        
+        if (allPanels.length && result.ps1) {
+          const glassThickness = input.glassThickness || '12';
+          const fenceType = input.fenceType || '';
+          const fenceCategory = fenceType.toLowerCase().includes('pool') ? 'pool' : 'balustrade';
+          
+          const ps1ForAggregate = {
+            internal: result.ps1.internal,
+            edge: result.ps1.edge,
+            system: fenceCategory,
+            thk: parseFloat(glassThickness) || 12,
+            hmin: 0,
+            hmax: 0,
+            zone: input.windZone || '',
+          };
+          const agg = aggregatePanels(allPanels, ps1ForAggregate);
+          panelsSummary = agg.panelsSummary;
+          totalSpigots = agg.totalSpigots + gateCount * 2; // add 2 posts per gate
+          estimatedPanels = agg.totalPanels;
+        }
+        
+        // Update result with new calculations
+        const newResult = {
+          ...result,
+          sideGatesRender: gates,
+          sidePanelLayouts: newSidePanelLayouts,
+          allPanels,
+          panelsSummary,
+          totalSpigots,
+          estimatedPanels,
+          estimatedSpigots: totalSpigots,
+        };
+        
+        setLayout({ ...input }, newResult);
+      } else {
+        // No panels to adjust (shouldn't happen normally)
+        setLayout({ ...input }, { ...result, sideGatesRender: gates });
+      }
+    } else {
+      setLayout({ ...input }, { ...result, sideGatesRender: gates });
+    }
   }
 
   // Flip hinge only: keep gate position and panels as-is, just invert hinge side
@@ -98,7 +221,8 @@ export default function SideVisuals() {
           gatesMeta[i] && gatesMeta[i].enabled
             ? (gatesMeta[i] as unknown as GateMeta)
             : null;
-        const gateLeaf = gate?.leafWidth ? Math.max(350, Math.min(1000, gate.leafWidth)) : 890;
+        // Use per-side gate width or fallback to global/default
+        const gateLeaf = gate?.leafWidth ? Math.max(350, Math.min(1000, gate.leafWidth)) : (globalGateLeafWidth || 890);
 
         const gateIndexRaw = gate ? Math.max(0, Math.min(totalPanels, gate.panelIndex)) : -1;
         const hasGateBeforePanel = (panelIndex: number) => gate && gateIndexRaw === panelIndex;
@@ -399,7 +523,7 @@ export default function SideVisuals() {
                       min={350}
                       max={1000}
                       step={5}
-                      defaultValue={gate.leafWidth ?? 890}
+                      defaultValue={gate.leafWidth ?? globalGateLeafWidth ?? 890}
                       onChange={(e)=> setGateLeafWidth(i, parseFloat(e.target.value))}
                       className="h-8 w-24 rounded-md border border-slate-300 px-2 text-[12px] focus:border-sky-400 focus:ring-2 focus:ring-sky-300/40"
                     />
