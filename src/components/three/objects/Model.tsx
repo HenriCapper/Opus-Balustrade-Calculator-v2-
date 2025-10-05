@@ -57,6 +57,15 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
       }) as any)
     : null;
 
+  // TEMPORARY: Use stainless as fallback for other finishes until proper textures are available
+  const fallbackMaps = (!useBlack && !useStainless && fstr) ? stainlessMaps || (useTexture({
+        map: '/textures/Stainless/BaseColor.jpg',
+        metalnessMap: '/textures/Stainless/Metallic.jpg',
+        normalMap: '/textures/Stainless/Normal.png',
+        roughnessMap: '/textures/Stainless/Roughness.jpg',
+        displacementMap: '/textures/Stainless/Displacement.png',
+      }) as any) : null;
+
   // Configure texture sampling for quality/consistency
   const configureMaps = (maps: any) => {
     if (!maps) return;
@@ -76,13 +85,14 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
   };
   configureMaps(blackMaps);
   configureMaps(stainlessMaps);
+  configureMaps(fallbackMaps);
 
   // Prepare a cloned scene with material overrides applied
   const sceneWithFinish = useMemo(() => {
     if (!gltf?.scene) return null;
     // Clone deeply to avoid mutating cached GLTF
     const root: THREE.Object3D = gltf.scene.clone(true);
-    if ((useBlack && blackMaps) || (useStainless && stainlessMaps)) {
+    if ((useBlack && blackMaps) || (useStainless && stainlessMaps) || fallbackMaps) {
       root.traverse((obj: any) => {
         if (obj && obj.isMesh) {
           const applyToMaterial = (mat: any) => {
@@ -91,8 +101,8 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
             const target = (mat.base ? mat.base : mat);
             const name = (target?.name || mat?.name || '').toLowerCase();
             if (name === 'base' || mat.base) {
-              // Assign PBR maps
-              const maps = useBlack ? blackMaps : stainlessMaps;
+              // Assign PBR maps (TEMPORARY: fallback to stainless for other finishes)
+              const maps = useBlack ? blackMaps : (useStainless ? stainlessMaps : fallbackMaps);
               if (maps?.map) target.map = maps.map;
               if (maps?.metalnessMap) target.metalnessMap = maps.metalnessMap;
               if (maps?.roughnessMap) target.roughnessMap = maps.roughnessMap;
@@ -122,7 +132,8 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
             const screw = (mat.screw ? mat.screw : mat);
             const screwName = (screw?.name || mat?.name || '').toLowerCase();
             if (screwName === 'screw' || mat.screw) {
-              const maps = useBlack ? blackMaps : stainlessMaps;
+              // TEMPORARY: fallback to stainless for other finishes
+              const maps = useBlack ? blackMaps : (useStainless ? stainlessMaps : fallbackMaps);
               if (maps?.map) screw.map = maps.map;
               if (maps?.metalnessMap) screw.metalnessMap = maps.metalnessMap;
               if (maps?.roughnessMap) screw.roughnessMap = maps.roughnessMap;
@@ -152,7 +163,7 @@ export function Model({ kind, code, scale = 1, rotation, quaternion, ...rest }: 
       });
     }
     return root;
-  }, [gltf, useBlack, blackMaps, useStainless, stainlessMaps]);
+  }, [gltf, useBlack, blackMaps, useStainless, stainlessMaps, fallbackMaps]);
 
   if(!gltf){
     // Fallback primitive: cylinder for spigots/posts, box for channels, sphere for standoffs
