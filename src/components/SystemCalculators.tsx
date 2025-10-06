@@ -26,8 +26,8 @@ import pf150 from '@/assets/standoffs/PF150R.webp'
 import pradis from '@/assets/standoffs/Pradis.webp'
 
 // Post systems assets (using SP12 as placeholder for now)
-import resolute from '@/assets/spigots/SP12.webp'
-import vortex from '@/assets/spigots/SP12.webp'
+import resolute from '@/assets/posts/Resolute.jpg'
+import vortex from '@/assets/posts/Vortex-Side-Fix.jpg'
 
 export type CalcItem = {
   key: string
